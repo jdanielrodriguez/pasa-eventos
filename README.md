@@ -1,77 +1,118 @@
 # Pasaeventos
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+Plataforma moderna para la venta y compra de boletos para eventos, desarrollada bajo una arquitectura monorepo con [Nx](https://nx.dev/), [TypeScript](https://www.typescriptlang.org/), Docker y mejores prácticas de calidad y despliegue continuo.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is almost ready ✨.
+## 🚀 ¿Qué es este proyecto?
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+**Pasaeventos** es un sistema digital orientado a facilitar la gestión, promoción, venta y validación de entradas para todo tipo de eventos, con enfoque en escalabilidad y calidad desde el día uno.  
+Este repositorio es el *core* backend y orquestador de servicios, completamente dockerizado, ideal para desarrollo local, pruebas, y despliegue en la nube.
 
-## Finish your CI setup
+## 🏗️ Arquitectura y tecnologías
 
-[Click here to finish setting up your workspace!](https://cloud.nx.app/connect/JhIedpdMBY)
+- **Monorepo Nx:** Todo el código fuente (backend, frontend y librerías compartidas) en un solo repositorio, facilitando el versionado y la colaboración.
+- **Backend:** Node.js + Express + TypeScript.
+- **Base de datos:** MySQL 8.
+- **Cache y colas:** Redis.
+- **Almacenamiento de archivos:** MinIO (compatible con S3).
+- **Correo de pruebas:** Mailhog.
+- **Admin DB:** phpMyAdmin.
+- **Infraestructura:** Docker Compose para todos los servicios de desarrollo, con orquestación de redes y volúmenes personalizados.
+- **CI/CD:** Listo para workflows independientes por servicio (backend, frontend), fácil integración con Github Actions y Google Cloud Run.
 
+## 📦 Estructura de carpetas principal
 
-## Run tasks
+```
+.
+├── api                 # Backend (Express/TypeScript)
+├── docker              # Archivos Dockerfiles custom (node, minio, etc)
+├── docker-compose.local.yml
+├── Makefile            # Tareas para devops y automatización
+├── package.json        # Dependencias monorepo y scripts Nx
+├── nx.json             # Configuración Nx
+└── ...                 # Otros servicios/libs/comandos
+```
 
-To run tasks with Nx use:
+## ⚡ Primeros pasos
+
+### 1. **Pre-requisitos**
+
+- [Docker](https://www.docker.com/get-started/)
+- [Node.js 20+](https://nodejs.org/) (para scripts Nx locales)
+- [Nx CLI (opcional)](https://nx.dev/cli)
+
+### 2. **Levantar todo el stack de desarrollo**
+
+```sh
+make init
+```
+
+Esto:
+- Crea la red y volúmenes necesarios (si no existen).
+- Construye las imágenes.
+- Levanta todos los servicios: API, MySQL, Redis, MinIO, phpMyAdmin, Mailhog.
+
+### 3. **Acceso rápido a servicios**
+
+- **API Backend:** [http://localhost:3000](http://localhost:3000)
+- **Health Check:** [http://localhost:3000/health](http://localhost:3000/health)
+- **phpMyAdmin:** [http://localhost:8081](http://localhost:8081)
+- **Mailhog:** [http://localhost:30250](http://localhost:30250)
+- **MinIO UI:** [http://localhost:9001](http://localhost:9001)
+
+### 4. **Shells y utilidades rápidas**
+
+- Acceso a cada contenedor:
+
+```sh
+make node-shell
+make db-shell
+make redis-shell
+make minio-shell
+make phpmyadmin-shell
+make mailhog-shell
+```
+
+## 🧪 Desarrollo y pruebas con Nx
+
+### Ejecutar tareas Nx:
 
 ```sh
 npx nx <target> <project-name>
 ```
 
-For example:
+Ejemplo, para el backend:
 
 ```sh
-npx nx build myproject
+npx nx serve api        # Levanta la API en modo desarrollo (hot reload)
+npx nx build api        # Compila la API a producción
+npx nx test api         # Ejecuta los tests de la API
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+Puedes combinar Nx con Docker para pruebas integradas o usar Nx localmente.
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## 🐳 Despliegue y ambientes
 
-## Add new projects
+- **Desarrollo:**  
+  Usa `docker-compose.local.yml` para levantar todo en tu máquina con hot reload.
+- **Producción y test:**  
+  Se recomienda crear archivos `docker-compose.prod.yml` o `docker-compose.test.yml` adaptados para tu entorno (ver ejemplos en `/docker`).
 
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
+## 💡 Tips y mejores prácticas
 
-To install a new plugin you can use the `nx add` command. Here's an example of adding the React plugin:
-```sh
-npx nx add @nx/react
-```
+- **Volúmenes:** El volumen `/app/node_modules` permite mantener dependencias aisladas por contenedor y facilita el hot reload.
+- **Variables de entorno:** Usa archivos `.env` según ambiente y expórtalos en tu compose o workflows.
+- **Nx:** Usa `npx nx graph` para visualizar dependencias entre proyectos y librerías.
+- **Extensiones recomendadas:** [Nx Console](https://nx.dev/getting-started/editor-setup) para autocompletado y generación de código desde tu IDE.
 
-Use the plugin's generator to create new projects. For example, to create a new React app or library:
+## 📚 Documentación y recursos
 
-```sh
-# Generate an app
-npx nx g @nx/react:app demo
+- [Documentación oficial Nx](https://nx.dev/)
+- [Express + TypeScript Best Practices](https://expressjs.com/en/advanced/best-practice-performance.html)
+- [Node.js Docker Best Practices](https://nodejs.org/en/docs/guides/nodejs-docker-webapp)
 
-# Generate a library
-npx nx g @nx/react:lib some-lib
-```
+---
 
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
+¿Dudas o sugerencias?  
+Cualquier mejora o issue, por favor abre un [issue](https://github.com/jdanielrodriguez/tikettera/issues) o contacta a los administradores del repo.
 
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+---

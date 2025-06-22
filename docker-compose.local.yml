@@ -1,0 +1,107 @@
+services:
+  pasaeventos_api:
+    container_name: pasaeventos_api
+    build:
+      context: .
+      dockerfile: ./docker/node/Dockerfile
+    restart: always
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    depends_on:
+      - pasaeventos_db
+      - pasaeventos_redis
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.10
+
+  pasaeventos_db:
+    image: mysql:8.0
+    container_name: pasaeventos_db
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_DATABASE: pasaeventos
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_USER: pasaeventos
+      MYSQL_PASSWORD: 1234
+    ports:
+      - '33060:3306'
+    volumes:
+      - pasaeventos_db_data:/var/lib/mysql
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.4
+
+  pasaeventos_phpmyadmin:
+    container_name: pasaeventos_phpmyadmin
+    image: phpmyadmin
+    restart: always
+    ports:
+      - 8081:80
+    environment:
+      - PMA_ARBITRARY=1
+    depends_on:
+      - pasaeventos_db
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.5
+
+  pasaeventos_redis:
+    container_name: pasaeventos_redis
+    image: redis:latest
+    ports:
+      - 6379:6379
+    volumes:
+      - pasaeventos_redis_data:/data
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.6
+
+  pasaeventos_mailhog:
+    platform: linux/x86_64
+    image: mailhog/mailhog
+    container_name: pasaeventos_mailhog
+    logging:
+      driver: 'none'
+    ports:
+      - 30250:8025
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.8
+
+  pasaeventos_minio:
+    image: minio/minio
+    container_name: pasaeventos_minio
+    command: server /data
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: pasaeventos
+      MINIO_ROOT_PASSWORD: pasaeventos
+    volumes:
+      - pasaeventos_minio_data:/data
+      - ./docker/minio/init:/docker-entrypoint-init.d
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.9
+
+volumes:
+  pasaeventos_db_data:
+    external: true
+  pasaeventos_redis_data:
+    external: true
+  pasaeventos_minio_data:
+    external: true
+
+networks:
+  pasaeventos_network:
+    external: true
+    name: pasaeventos_network
