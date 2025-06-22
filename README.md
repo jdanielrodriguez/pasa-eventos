@@ -53,8 +53,8 @@ Esto:
 
 ### 3. **Acceso rápido a servicios**
 
-- **API Backend:** [http://localhost:3000](http://localhost:3000)
-- **Health Check:** [http://localhost:3000/health](http://localhost:3000/health)
+- **API Backend:** [http://localhost:8080](http://localhost:8080)
+- **Health Check:** [http://localhost:8080/health](http://localhost:8080/health)
 - **phpMyAdmin:** [http://localhost:8081](http://localhost:8081)
 - **Mailhog:** [http://localhost:30250](http://localhost:30250)
 - **MinIO UI:** [http://localhost:9001](http://localhost:9001)

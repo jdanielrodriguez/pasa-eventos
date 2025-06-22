@@ -3,7 +3,7 @@ dotenv.config();
 
 export const config = {
   env: process.env.NODE_ENV || 'development',
-  port: Number(process.env.PORT) || 3000,
+  port: Number(process.env.PORT) || 8080,
   mysql: {
     host: process.env.MYSQL_HOST || 'pasaeventos_db',
     port: Number(process.env.MYSQL_PORT) || 3306,
