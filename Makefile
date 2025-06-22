@@ -25,11 +25,11 @@ init:
 
 .PHONY: test
 test:
-	docker exec -it pasaeventos_api npx nx test api --coverage
+	docker exec pasaeventos_api npx nx test api --coverage
 
 .PHONY: test-all monorepo
 test-all:
-	docker exec -it pasaeventos_api npx nx test
+	docker exec pasaeventos_api npx nx test
 
 .PHONY: rebuild
 rebuild:

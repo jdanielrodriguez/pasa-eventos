@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../../../api/src/app'; // importa tu instancia de express
+import app from '../../app'; // importa tu instancia de express
 
 describe('Health Integration', () => {
   it('should return health status for all services', async () => {

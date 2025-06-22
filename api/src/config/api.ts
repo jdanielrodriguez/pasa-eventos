@@ -18,7 +18,7 @@ export const config = {
   filemanager: {
     provider: process.env.FILEMANAGER_PROVIDER || 'minio',
     minio: {
-      endPoint: process.env.MINIO_ENDPOINT || 'pasaeventos_minio',
+      endPoint: process.env.MINIO_ENDPOINT || '172.16.0.9',
       port: Number(process.env.MINIO_PORT) || 9000,
       accessKey: process.env.MINIO_ROOT_USER || 'pasaeventos',
       secretKey: process.env.MINIO_ROOT_PASSWORD || 'pasaeventos',

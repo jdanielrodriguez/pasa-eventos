@@ -17,6 +17,7 @@ services:
     depends_on:
       - pasaeventos_db
       - pasaeventos_redis
+      - pasaeventos_minio
     networks:
       pasaeventos_network:
         ipv4_address: 172.16.0.10

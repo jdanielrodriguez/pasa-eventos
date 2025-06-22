@@ -7,10 +7,10 @@ export default {
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
   coverageDirectory: '../coverage/api',
-  setupFilesAfterEnv: ['<rootDir>/../tests/api/setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'],
   testMatch: [
-    '<rootDir>/../tests/api/unit/**/*.test.ts',
-    '<rootDir>/../tests/api/integration/**/*.test.ts'
+    '<rootDir>/src/test/unit/**/*.test.ts',
+    '<rootDir>/src/test/integration/**/*.test.ts'
   ],
   collectCoverageFrom: [
     '<rootDir>/src/**/*.{js,ts}',
