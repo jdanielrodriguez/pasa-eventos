@@ -15,17 +15,28 @@ export const config = {
     host: process.env.REDIS_HOST || 'pasaeventos_redis',
     port: Number(process.env.REDIS_PORT) || 6379,
   },
-  minio: {
-    endPoint: process.env.MINIO_ENDPOINT || 'pasaeventos_minio',
-    port: Number(process.env.MINIO_PORT) || 9000,
-    accessKey: process.env.MINIO_ROOT_USER || 'pasaeventos',
-    secretKey: process.env.MINIO_ROOT_PASSWORD || 'pasaeventos',
-    useSSL: false,
-  },
+  filemanager: {
+    provider: process.env.FILEMANAGER_PROVIDER || 'minio',
+    minio: {
+      endPoint: process.env.MINIO_ENDPOINT || 'pasaeventos_minio',
+      port: Number(process.env.MINIO_PORT) || 9000,
+      accessKey: process.env.MINIO_ROOT_USER || 'pasaeventos',
+      secretKey: process.env.MINIO_ROOT_PASSWORD || 'pasaeventos',
+      useSSL: false,
+    },
+    s3: {
+      region: process.env.S3_REGION || '',
+      accessKeyId: process.env.S3_KEY || '',
+      secretAccessKey: process.env.S3_SECRET || '',
+      bucket: process.env.S3_BUCKET || '',
+    },
+  }
+  ,
   mail: {
     host: process.env.MAIL_HOST || 'pasaeventos_mailhog',
     port: Number(process.env.MAIL_PORT) || 1025,
     user: process.env.MAIL_USER || '',
     pass: process.env.MAIL_PASS || '',
+    secure: process.env.MAIL_SECURE || false,
   },
 };
