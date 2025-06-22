@@ -1,42 +1,54 @@
 import dotenv from 'dotenv';
+import { envSchema } from './env.validation';
 dotenv.config();
 
+const { value: envVars, error } = envSchema.validate(process.env, { abortEarly: false });
+
+if (error) {
+  throw new Error(`Config validation error: ${error.message}`);
+}
+
 export const config = {
-  env: process.env.NODE_ENV || 'development',
-  port: Number(process.env.PORT) || 8080,
+  env: envVars.NODE_ENV,
+  isProd: envVars.NODE_ENV === 'production',
+  isDev: envVars.NODE_ENV === 'development',
+  isTest: envVars.NODE_ENV === 'test',
+  port: envVars.PORT,
   mysql: {
-    host: process.env.MYSQL_HOST || 'pasaeventos_db',
-    port: Number(process.env.MYSQL_PORT) || 3306,
-    user: process.env.MYSQL_USER || 'pasaeventos',
-    password: process.env.MYSQL_PASSWORD || '1234',
-    database: process.env.MYSQL_DATABASE || 'pasaeventos',
+    host: envVars.MYSQL_HOST,
+    port: envVars.MYSQL_PORT,
+    user: envVars.MYSQL_USER,
+    password: envVars.MYSQL_PASSWORD,
+    database: envVars.MYSQL_DATABASE,
   },
   redis: {
-    host: process.env.REDIS_HOST || 'pasaeventos_redis',
-    port: Number(process.env.REDIS_PORT) || 6379,
+    host: envVars.REDIS_HOST,
+    port: envVars.REDIS_PORT,
   },
   filemanager: {
-    provider: process.env.FILEMANAGER_PROVIDER || 'minio',
+    provider: envVars.FILEMANAGER_PROVIDER,
     minio: {
-      endPoint: process.env.MINIO_ENDPOINT || '172.16.0.9',
-      port: Number(process.env.MINIO_PORT) || 9000,
-      accessKey: process.env.MINIO_ROOT_USER || 'pasaeventos',
-      secretKey: process.env.MINIO_ROOT_PASSWORD || 'pasaeventos',
+      endPoint: envVars.MINIO_ENDPOINT,
+      port: envVars.MINIO_PORT,
+      accessKey: envVars.MINIO_ROOT_USER,
+      secretKey: envVars.MINIO_ROOT_PASSWORD,
       useSSL: false,
     },
     s3: {
-      region: process.env.S3_REGION || '',
-      accessKeyId: process.env.S3_KEY || '',
-      secretAccessKey: process.env.S3_SECRET || '',
-      bucket: process.env.S3_BUCKET || '',
+      region: envVars.S3_REGION,
+      accessKeyId: envVars.S3_KEY,
+      secretAccessKey: envVars.S3_SECRET,
+      bucket: envVars.S3_BUCKET,
     },
-  }
-  ,
+  },
   mail: {
-    host: process.env.MAIL_HOST || 'pasaeventos_mailhog',
-    port: Number(process.env.MAIL_PORT) || 1025,
-    user: process.env.MAIL_USER || '',
-    pass: process.env.MAIL_PASS || '',
-    secure: process.env.MAIL_SECURE || false,
+    host: envVars.MAIL_HOST,
+    port: envVars.MAIL_PORT,
+    user: envVars.MAIL_USER,
+    pass: envVars.MAIL_PASS,
+    secure: envVars.MAIL_SECURE,
+  },
+  cors: {
+    origins: envVars.CORS_ORIGINS.split(',').map((s: string) => s.trim()),
   },
 };

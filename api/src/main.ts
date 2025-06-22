@@ -8,3 +8,12 @@ const port = config.port;
 app.listen(port, host, () => {
   logger.info(`[ ready ] http://${host}:${port}`);
 });
+
+process.on('uncaughtException', (err: unknown) => {
+  logger.error('Uncaught Exception', typeof err === 'object' ? err : { error: err });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  logger.error('Unhandled Rejection', typeof reason === 'object' ? reason : { error: reason });
+});

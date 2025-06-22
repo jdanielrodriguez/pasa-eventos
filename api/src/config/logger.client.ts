@@ -1,13 +1,23 @@
-type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+import winston from 'winston';
+import { config } from './api';
 
-function log(level: LogLevel, ...args: any[]) {
-  const now = new Date().toISOString();
-  console[level === 'error' ? 'error' : level](`[${now}] [${level.toUpperCase()}]`, ...args);
-}
+const isProd = config.isProd;
 
-export const logger = {
-  info: (...args: any[]) => log('info', ...args),
-  warn: (...args: any[]) => log('warn', ...args),
-  error: (...args: any[]) => log('error', ...args),
-  debug: (...args: any[]) => log('debug', ...args),
-};
+const prodFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json()
+);
+
+const devFormat = winston.format.combine(
+  winston.format.colorize(),
+  winston.format.timestamp(),
+  winston.format.printf(({ timestamp, level, message, ...meta }) =>
+    `[${timestamp}] [${level}] ${message} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`
+  )
+);
+
+export const logger = winston.createLogger({
+  level: isProd ? 'info' : 'debug',
+  format: isProd ? prodFormat : devFormat,
+  transports: [new winston.transports.Console()],
+});
