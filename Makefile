@@ -23,6 +23,14 @@ init:
 	docker-compose -f docker-compose.local.yml build
 	docker-compose -f docker-compose.local.yml up -d
 
+.PHONY: test
+test:
+	docker exec -it pasaeventos_api npx nx test api --coverage
+
+.PHONY: test-all monorepo
+test-all:
+	docker exec -it pasaeventos_api npx nx test
+
 .PHONY: rebuild
 rebuild:
 	docker-compose -f docker-compose.local.yml up --build --force-recreate -d

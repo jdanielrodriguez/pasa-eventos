@@ -1,15 +1,10 @@
-import express from 'express';
+import app from './app';
+import { config } from './config/api';
+import { logger } from './config/logger.client';
 
-const host =  '0.0.0.0';
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-
-const app = express();
-
-app.get('/', (req, res) => {
-  res.send({ message: 'Hello API' });
-});
-app.get('/health', (_, res) => res.send('ok'));
+const host = '0.0.0.0';
+const port = config.port;
 
 app.listen(port, host, () => {
-  console.log(`[ ready ] http://${host}:${port}`);
+  logger.info(`[ ready ] http://${host}:${port}`);
 });
