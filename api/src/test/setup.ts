@@ -12,6 +12,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  interface Closable {
+    close: () => Promise<void> | void;
+  }
+
+  function hasClose(obj: unknown): obj is Closable {
+    return typeof obj === 'object' && obj !== null && typeof (obj as Record<string, unknown>).close === 'function';
+  }
+
   try {
     const mysql = await getMysqlClient();
     if (mysql && typeof mysql.end === 'function') {
@@ -41,12 +49,12 @@ afterAll(async () => {
 
   try {
     const fm = getFileManagerClient();
-    if (fm && typeof (fm as any).close === 'function') {
-      await (fm as any).close();
+    if (hasClose(fm)) {
+      await fm.close();
     }
   } catch (e) {
     console.error('Error closing filemanager client:', e);
   }
 });
 
-export {};
+export { };

@@ -3,7 +3,7 @@ import { config } from '../config/api';
 import { logger } from '../config/logger.client';
 import { AppError, CorsError, CsrfError, RateLimitError } from '../types/appError';
 
-function serializeError(err: unknown): Record<string, unknown> {
+export function serializeError(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
     return {
       name: err.name,
@@ -22,6 +22,10 @@ export function truncate(obj: unknown, maxLen = 300): string {
   let str: string;
   if (typeof obj === 'string') {
     str = obj;
+  } else if (obj === null) {
+    str = 'null';
+  } else if (typeof obj === 'undefined') {
+    str = 'undefined';
   } else {
     try {
       str = JSON.stringify(obj);
@@ -87,11 +91,14 @@ export function errorHandler(
   if (config.isProd) {
     response.requestId = req.requestId;
     response.detail = truncate((err as Error).message ?? '', 300);
-    if ((err as Error).stack) {
-      response.stack = truncate((err as Error).stack ?? '', 300);
-    }
   } else {
-    response.stack = (err as Error).stack;
+    if (config.isTest && (err as Error).stack) {
+      response.stack = truncate((err as Error).stack, 300);
+    } else if ((err as Error).stack) {
+      response.stack = (err as Error).stack;
+    } else {
+      response.stack = '';
+    }
     response.detail = serializeError(err);
   }
 

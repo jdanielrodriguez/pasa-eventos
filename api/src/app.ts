@@ -12,7 +12,6 @@ import routes from './routes/health.routes';
 import { AppError } from './types/appError';
 
 const app = express();
-app.use(requestIdMiddleware);
 app.disable('x-powered-by');
 app.use(helmet());
 app.use(
@@ -33,8 +32,8 @@ app.use(
 );
 app.use(compression());
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
-
 app.use(express.json());
+app.use(requestIdMiddleware);
 app.use(requestLogger);
 
 if (!config.isProd) {
