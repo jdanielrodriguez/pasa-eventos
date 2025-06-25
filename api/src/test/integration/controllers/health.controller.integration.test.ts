@@ -21,7 +21,7 @@ describe('healthController integration', () => {
     (healthService as jest.Mock).mockResolvedValue({
       mysql: { ok: true },
       redis: { ok: true },
-      minio: { ok: true },
+      filemanager: { ok: true },
       mail: { ok: true },
     });
 
@@ -30,7 +30,7 @@ describe('healthController integration', () => {
     expect(res.body).toEqual({
       mysql: { ok: true },
       redis: { ok: true },
-      minio: { ok: true },
+      filemanager: { ok: true },
       mail: { ok: true },
     });
     expect(healthService).toHaveBeenCalled();
@@ -40,7 +40,7 @@ describe('healthController integration', () => {
     (healthService as jest.Mock).mockResolvedValue({
       mysql: { ok: false, detail: 'MySQL down' },
       redis: { ok: true },
-      minio: { ok: false, detail: 'Minio error' },
+      filemanager: { ok: false, detail: 'FileManager error' },
       mail: { ok: true },
     });
 
@@ -49,7 +49,7 @@ describe('healthController integration', () => {
     expect(res.body).toEqual({
       mysql: { ok: false, detail: 'MySQL down' },
       redis: { ok: true },
-      minio: { ok: false, detail: 'Minio error' },
+      filemanager: { ok: false, detail: 'FileManager error' },
       mail: { ok: true },
     });
     expect(healthService).toHaveBeenCalled();

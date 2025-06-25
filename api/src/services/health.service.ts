@@ -1,7 +1,7 @@
 import { getMailClient } from '../config/mail.client';
-import { getFileManagerClient } from '../config/filemanager.client';
 import { getMysqlClient } from '../config/mysql.client';
 import { getRedisClient } from '../config/redis.client';
+import { getFileManagerClient, isS3, isMinio } from '../config/filemanager.client';
 
 export async function redisPing() {
   const client = getRedisClient();
@@ -23,14 +23,26 @@ export async function mysqlPing() {
   }
 }
 
-export async function minioPing() {
+export async function fileManagerPing() {
   const client = getFileManagerClient();
-  try {
-    await client.listBuckets();
-    return { ok: true };
-  } catch (error: unknown) {
-    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  if (isMinio(client)) {
+    try {
+      await client.listBuckets();
+      return { ok: true };
+    } catch (error: unknown) {
+      return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+    }
   }
+
+  if (isS3(client)) {
+    try {
+      await client.getBuckets();
+      return { ok: true };
+    } catch (error: unknown) {
+      return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  return { ok: false, detail: 'No valid filemanager provider configured' };
 }
 
 export async function mailPing() {
@@ -44,17 +56,17 @@ export async function mailPing() {
 }
 
 export async function healthService() {
-  const [mysql, redis, minio, mail] = await Promise.all([
+  const [mysql, redis, filemanager, mail] = await Promise.all([
     mysqlPing(),
     redisPing(),
-    minioPing(),
+    fileManagerPing(),
     mailPing(),
   ]);
 
   return {
     mysql,
     redis,
-    minio,
+    filemanager,
     mail,
   };
 }

@@ -27,6 +27,18 @@ init:
 test:
 	docker exec pasaeventos_api npx nx test api --coverage
 
+.PHONY: deploy
+deploy:
+	@echo "Authenticating and deploying to Google Cloud Run..."
+	gcloud auth activate-service-account --key-file gcp-service-account.json
+	gcloud config set project pasa-eventos
+	gcloud builds submit --tag us-central1-docker.pkg.dev/pasa-eventos/pasaeventos-backend/api:latest .
+	gcloud run deploy pasaeventos-api \
+		--image us-central1-docker.pkg.dev/pasa-eventos/pasaeventos-backend/api:latest \
+		--region us-central1 \
+		--platform managed \
+		--allow-unauthenticated
+
 .PHONY: test-all monorepo
 test-all:
 	docker exec pasaeventos_api npx nx test

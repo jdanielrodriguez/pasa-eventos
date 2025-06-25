@@ -24,6 +24,7 @@ export const config = {
   redis: {
     host: envVars.REDIS_HOST,
     port: envVars.REDIS_PORT,
+    password: envVars.REDIS_PASSWORD,
   },
   filemanager: {
     provider: envVars.FILEMANAGER_PROVIDER,
@@ -34,11 +35,10 @@ export const config = {
       secretKey: envVars.MINIO_ROOT_PASSWORD,
       useSSL: false,
     },
-    s3: {
-      region: envVars.S3_REGION,
-      accessKeyId: envVars.S3_KEY,
-      secretAccessKey: envVars.S3_SECRET,
-      bucket: envVars.S3_BUCKET,
+    gcp: {
+      serviceAccount: envVars.GCS_SERVICE_ACCOUNT_JSON,
+      projectId: envVars.GCLOUD_PROJECT_ID,
+      bucket: envVars.GCS_BUCKET,
     },
   },
   mail: {

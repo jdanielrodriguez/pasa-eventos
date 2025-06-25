@@ -63,39 +63,64 @@ cp .env.example .env
 Ejemplo de variables (dev/prod):
 
 ```
+# ===========================
 # General
 NODE_ENV=development
 PORT=8080
-
+# ===========================
 # MySQL
-MYSQL_HOST=pasaeventos_db
+MYSQL_HOST=pasaeventos_db         # Local Docker
 MYSQL_PORT=3306
 MYSQL_USER=pasaeventos
 MYSQL_PASSWORD=1234
 MYSQL_DATABASE=pasaeventos
-
+# ===========================
+# MySQL PROD
+# MYSQL_HOST=PROD_MYSQL_HOST
+# MYSQL_PORT=PROD_MYSQL_PORT
+# MYSQL_USER=PROD_MYSQL_USER
+# MYSQL_PASSWORD=PROD_MYSQL_PASSWORD
+# MYSQL_DATABASE=PROD_MYSQL_DATABASE
+# ===========================
 # Redis
-REDIS_HOST=pasaeventos_redis
+REDIS_HOST=pasaeventos_redis      # Local Docker
 REDIS_PORT=6379
-
-# FileManager (MinIO/S3)
-FILEMANAGER_PROVIDER=minio
-MINIO_ENDPOINT=172.16.0.9
+# ===========================
+# Redis PROD
+# REDIS_HOST=PROD_REDIS_HOST
+# REDIS_PORT=PROD_REDIS_PORT
+# ===========================
+# Filemanager (MinIO/S3)
+FILEMANAGER_PROVIDER=minio        # Options: minio, s3
+# --- MinIO (local/desarrollo) ---
+MINIO_ENDPOINT=172.16.0.9         # Docker network IP
 MINIO_PORT=9000
 MINIO_ROOT_USER=pasaeventos
 MINIO_ROOT_PASSWORD=pasaeventos
-# En prod:
+MINIO_USE_SSL=false
+# ===========================
+# --- GCP STORAGE (PROD) ---
 # FILEMANAGER_PROVIDER=s3
-# S3_REGION=us-east-1
-# S3_ACCESS_KEY_ID=...
-# S3_SECRET_ACCESS_KEY=...
-
-# Mail (SMTP)
+# GCS_SERVICE_ACCOUNT_JSON=GCS_SERVICE_ACCOUNT_JSON_CONTENT
+# GCLOUD_PROJECT_ID=PRO_GCLOUD_PROJECT_ID
+# GCS_BUCKET=PRO_GCS_BUCKET
+# ===========================
+# Mail (Mailhog)
 MAIL_HOST=pasaeventos_mailhog
 MAIL_PORT=1025
 MAIL_USER=
 MAIL_PASS=
-# En prod usar SMTP real
+# ===========================
+# Mail (Gmail PROD)
+# MAIL_HOST=google
+# MAIL_PASS=PROD_MAIL_PASS
+# MAIL_USER=PROD_MAIL_USER@gmail.com
+# MAIL_FROM=alertas@pasa-eventos.com
+# MAIL_TO=admin@pasa-eventos.com
+# MAIL_SECURE=true
+# ===========================
+# CORS_ORIGINS puede ser uno o varios dominios separados por coma
+CORS_ORIGINS=http://localhost:4200,http://localhost:4300
 ```
 
 ### 3. **Levantar todo el stack de desarrollo**

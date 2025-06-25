@@ -85,4 +85,50 @@ describe('getMailClient', () => {
     expect(client1).toBe(client2);
     expect(createTransport).toHaveBeenCalledTimes(1);
   });
+
+  it('should create transport with gmail service if host is gmail', () => {
+    mailConfig.host = 'gmail';
+    mailConfig.user = 'testuser@gmail.com';
+    mailConfig.pass = 'gmailpass';
+    jest.resetModules();
+    const { getMailClient } = require('../../../config/mail.client');
+    getMailClient();
+
+    expect(createTransport).toHaveBeenCalledWith({
+      service: 'gmail',
+      auth: { user: 'testuser@gmail.com', pass: 'gmailpass' },
+    });
+  });
+
+  it('should create transport with mailhog config if host is pasaeventos_mailhog', () => {
+    mailConfig.host = 'pasaeventos_mailhog';
+    mailConfig.port = 1025;
+    jest.resetModules();
+    const { getMailClient } = require('../../../config/mail.client');
+    getMailClient();
+
+    expect(createTransport).toHaveBeenCalledWith({
+      host: 'pasaeventos_mailhog',
+      port: 1025,
+      secure: false,
+      auth: undefined,
+    });
+  });
+
+  it('should use port 465 as default when mailConfig.port is undefined', () => {
+    mailConfig.port = undefined;
+    mailConfig.secure = false;
+    mailConfig.user = 'user';
+    mailConfig.pass = 'pw';
+    jest.resetModules();
+    const { getMailClient } = require('../../../config/mail.client');
+    getMailClient();
+
+    expect(createTransport).toHaveBeenCalledWith({
+      host: 'mail',
+      port: 465,
+      secure: false, // así lo calcula realmente tu función
+      auth: { user: 'user', pass: 'pw' },
+    });
+  });
 });

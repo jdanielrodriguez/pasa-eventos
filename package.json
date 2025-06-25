@@ -39,8 +39,8 @@
     "typescript-eslint": "^8.29.0"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.832.0",
     "@faker-js/faker": "^9.8.0",
+    "@google-cloud/storage": "^7.16.0",
     "@nestjs/common": "^11.1.3",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.3",

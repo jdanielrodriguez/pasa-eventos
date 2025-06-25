@@ -14,6 +14,7 @@ export const envSchema = Joi.object({
   // Redis
   REDIS_HOST: Joi.string().required(),
   REDIS_PORT: Joi.number().default(6379),
+  REDIS_PASSWORD: Joi.string().default(null),
 
   // Filemanager/Minio/S3
   FILEMANAGER_PROVIDER: Joi.string().valid('minio', 's3').default('minio'),
@@ -22,10 +23,9 @@ export const envSchema = Joi.object({
   MINIO_ROOT_USER: Joi.string(),
   MINIO_ROOT_PASSWORD: Joi.string(),
 
-  S3_REGION: Joi.string().allow(''),
-  S3_KEY: Joi.string().allow(''),
-  S3_SECRET: Joi.string().allow(''),
-  S3_BUCKET: Joi.string().allow(''),
+  GCS_SERVICE_ACCOUNT_JSON: Joi.string().allow(''),
+  GCLOUD_PROJECT_ID: Joi.string().allow(''),
+  GCS_BUCKET: Joi.string().allow(''),
 
   // Mail
   MAIL_HOST: Joi.string().required(),

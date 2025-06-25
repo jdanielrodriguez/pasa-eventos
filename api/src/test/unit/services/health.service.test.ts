@@ -11,6 +11,8 @@ jest.mock('../../../config/mail.client', () => ({
 }));
 jest.mock('../../../config/filemanager.client', () => ({
   getFileManagerClient: jest.fn(),
+  isMinio: jest.fn().mockReturnValue(true),
+  isS3: jest.fn().mockReturnValue(false),
 }));
 
 import { getMysqlClient } from '../../../config/mysql.client';
@@ -79,12 +81,12 @@ describe('healthService', () => {
     });
   });
 
-  describe('minioPing', () => {
+  describe('fileManagerPing', () => {
     it('should return ok: true on success', async () => {
       (getFileManagerClient as jest.Mock).mockReturnValue({
         listBuckets: jest.fn().mockResolvedValue([]),
       });
-      const result = await health.minioPing();
+      const result = await health.fileManagerPing();
       expect(result).toEqual({ ok: true });
     });
 
@@ -92,7 +94,7 @@ describe('healthService', () => {
       (getFileManagerClient as jest.Mock).mockReturnValue({
         listBuckets: jest.fn().mockRejectedValue(new Error('Minio fail')),
       });
-      const result = await health.minioPing();
+      const result = await health.fileManagerPing();
       expect(result.ok).toBe(false);
       expect(result.detail).toContain('Minio fail');
     });
@@ -101,9 +103,58 @@ describe('healthService', () => {
       (getFileManagerClient as jest.Mock).mockReturnValue({
         listBuckets: jest.fn().mockRejectedValue(12345),
       });
-      const result = await health.minioPing();
+      const result = await health.fileManagerPing();
       expect(result.ok).toBe(false);
       expect(result.detail).toContain('12345');
+    });
+
+    it('should handle non-Error exception objects when isS3', async () => {
+      const filemanager = require('../../../config/filemanager.client');
+      filemanager.isMinio = jest.fn().mockReturnValue(false);
+      filemanager.isS3 = jest.fn().mockReturnValue(true);
+
+      (getFileManagerClient as jest.Mock).mockReturnValue({
+        getBuckets: jest.fn().mockRejectedValue(12345),
+      });
+      const result = await health.fileManagerPing();
+      expect(result.ok).toBe(false);
+      expect(result.detail).toBe('12345');
+    });
+  });
+
+  describe('fileManagerPing S3', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      const filemanager = require('../../../config/filemanager.client');
+      filemanager.isMinio = jest.fn().mockReturnValue(false);
+      filemanager.isS3 = jest.fn().mockReturnValue(true);
+    });
+
+    it('should return ok: true when isS3 and getBuckets resolves', async () => {
+      (getFileManagerClient as jest.Mock).mockReturnValue({
+        getBuckets: jest.fn().mockResolvedValue(['bucket1']),
+      });
+      const result = await health.fileManagerPing();
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('should return ok: false when isS3 and getBuckets rejects', async () => {
+      (getFileManagerClient as jest.Mock).mockReturnValue({
+        getBuckets: jest.fn().mockRejectedValue(new Error('S3 fail')),
+      });
+      const result = await health.fileManagerPing();
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain('S3 fail');
+    });
+
+    it('should return ok: false when neither isMinio nor isS3', async () => {
+      const filemanager = require('../../../config/filemanager.client');
+      filemanager.isMinio = jest.fn().mockReturnValue(false);
+      filemanager.isS3 = jest.fn().mockReturnValue(false);
+
+      (getFileManagerClient as jest.Mock).mockReturnValue({});
+      const result = await health.fileManagerPing();
+      expect(result).toEqual({ ok: false, detail: 'No valid filemanager provider configured' });
     });
   });
 
@@ -136,6 +187,11 @@ describe('healthService', () => {
   });
 
   describe('healthService', () => {
+    beforeEach(() => {
+      const filemanager = require('../../../config/filemanager.client');
+      filemanager.isMinio = jest.fn().mockReturnValue(true);
+      filemanager.isS3 = jest.fn().mockReturnValue(false);
+    });
     it('should aggregate all services status', async () => {
       (getMysqlClient as jest.Mock).mockResolvedValue({
         query: jest.fn().mockResolvedValue([{}]),
@@ -153,7 +209,7 @@ describe('healthService', () => {
       const result = await health.healthService();
       expect(result.mysql.ok).toBe(true);
       expect(result.redis.ok).toBe(true);
-      expect(result.minio.ok).toBe(true);
+      expect(result.filemanager.ok).toBe(true);
       expect(result.mail.ok).toBe(true);
     });
 
@@ -165,7 +221,7 @@ describe('healthService', () => {
         ping: jest.fn().mockRejectedValue(new Error('Redis fail')),
       });
       (getFileManagerClient as jest.Mock).mockReturnValue({
-        listBuckets: jest.fn().mockRejectedValue(new Error('Minio fail')),
+        listBuckets: jest.fn().mockRejectedValue(new Error('FileManager fail')),
       });
       (getMailClient as jest.Mock).mockReturnValue({
         verify: jest.fn().mockRejectedValue(new Error('Mail fail')),
@@ -174,12 +230,12 @@ describe('healthService', () => {
       const result = await health.healthService();
       expect(result.mysql.ok).toBe(false);
       expect(result.redis.ok).toBe(false);
-      expect(result.minio.ok).toBe(false);
+      expect(result.filemanager.ok).toBe(false);
       expect(result.mail.ok).toBe(false);
 
       expect(result.mysql.detail).toContain('Mysql fail');
       expect(result.redis.detail).toContain('Redis fail');
-      expect(result.minio.detail).toContain('Minio fail');
+      expect(result.filemanager.detail).toContain('FileManager fail');
       expect(result.mail.detail).toContain('Mail fail');
     });
   });

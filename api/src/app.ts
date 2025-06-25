@@ -18,12 +18,10 @@ app.use(
   cors({
     origin: (origin: string | undefined, callback) => {
       if (!origin) {
+        if (config.cors.origins.includes('*')) return callback(null, true);
         if (config.isDev || config.isTest) return callback(null, true);
-        return callback(new Error('Not allowed by CORS'), false);
       }
-      if (config.cors.origins.includes(origin)) {
-        return callback(null, true);
-      }
+      if (config.cors.origins.includes(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'), false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
