@@ -1,0 +1,7 @@
+services:
+  pasaeventos_api:
+    environment:
+      - NODE_ENV=test
+    build:
+      args:
+        NODE_ENV: test
