@@ -35,7 +35,7 @@ jobs:
         run: cp .env.example .env
 
       - name: Build Docker images and start services
-        run: make init
+        run: make init-test
 
       - name: Wait for MinIO
         run: |
@@ -55,3 +55,7 @@ jobs:
 
       - name: Run tests inside API container
         run: make test
+
+      - name: Show pasaeventos_api logs if failed
+        if: failure()
+        run: docker logs pasaeventos_api || true
