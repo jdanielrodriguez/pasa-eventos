@@ -1,4 +1,20 @@
 services:
+  pasaeventos_frontend:
+    build:
+      context: .
+      dockerfile: ./docker/node/Dockerfile.frontend
+    container_name: pasaeventos_frontend
+    working_dir: /app/frontend
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    depends_on:
+      - pasaeventos_api
+    ports:
+      - '4201:4200'
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.11
   pasaeventos_api:
     container_name: pasaeventos_api
     build:
@@ -14,6 +30,7 @@ services:
     volumes:
       - ./:/app
       - /app/node_modules
+      - ./frontend/dist/frontend:/app/dist/frontend
     depends_on:
       - pasaeventos_db
       - pasaeventos_redis

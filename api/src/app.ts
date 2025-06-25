@@ -1,5 +1,6 @@
 import cors from 'cors';
 import helmet from 'helmet';
+import { join } from 'path';
 import express from 'express';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
@@ -39,6 +40,24 @@ if (!config.isProd) {
 }
 
 app.use('/health', routes);
+if (!config.isTest) {
+  const ssrDist = join(__dirname, `../../${config.isDev ? '../../frontend/dist/' : ''}frontend`);
+  const ssrServer = require(join(ssrDist, 'server', 'server.mjs'));
+  const ssrHandler = ssrServer.reqHandler;
+  const ssrStatic = express.static(join(ssrDist, 'browser'), {
+    maxAge: '1y',
+    index: false,
+    redirect: false,
+  });
+  app.use(ssrStatic);
+  app.use((req, res, next) => {
+    if (res.headersSent) return next();
+    if (req.url.startsWith('/api') || req.url.startsWith('/health')) {
+      return next();
+    }
+    return ssrHandler(req, res, next);
+  });
+}
 app.use((req, res, next) => {
   next(new AppError(`Route not found: ${req.originalUrl}`, 404, true));
 });
