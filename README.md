@@ -137,7 +137,7 @@ Esto:
 ### 4. **Acceso rápido a servicios**
 
 - **API Backend:** [http://localhost:8080](http://localhost:8080)
-- **Health Check:** [http://localhost:8080/health](http://localhost:8080/health)
+- **Health Check:** [http://localhost:8080/api/v1/health](http://localhost:8080/api/v1/health)
 - **Swagger Docs:** [http://localhost:8080/docs](http://localhost:8080/docs)
 - **phpMyAdmin:** [http://localhost:8081](http://localhost:8081)
 - **Mailhog:** [http://localhost:30250](http://localhost:30250)

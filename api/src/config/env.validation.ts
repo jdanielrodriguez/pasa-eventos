@@ -16,7 +16,7 @@ export const envSchema = Joi.object({
   REDIS_PORT: Joi.number().default(6379),
   REDIS_PASSWORD: Joi.string().default(null),
 
-  // Filemanager/Minio/S3
+  // Filemanager/Minio/GCS
   FILEMANAGER_PROVIDER: Joi.string().valid('minio', 's3').default('minio'),
   MINIO_ENDPOINT: Joi.string().when('FILEMANAGER_PROVIDER', { is: 'minio', then: Joi.required() }),
   MINIO_PORT: Joi.number().default(9000),
@@ -35,5 +35,5 @@ export const envSchema = Joi.object({
   MAIL_SECURE: Joi.boolean().default(false),
 
   // CORS
-  CORS_ORIGINS: Joi.string().required(), // Coma separados: "http://localhost:4200,https://tusitio.com"
+  CORS_ORIGINS: Joi.string().required(),
 }).unknown();

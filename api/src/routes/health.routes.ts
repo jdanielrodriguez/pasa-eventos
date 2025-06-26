@@ -5,7 +5,7 @@ const router = Router();
 router.get('/', healthController);
 /**
  * @openapi
- * /health:
+ * /api/v1/health:
  *   get:
  *     summary: Health check de las dependencias del sistema
  *     tags:

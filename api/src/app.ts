@@ -2,12 +2,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { join } from 'path';
 import express from 'express';
+import { config } from './config/api';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { config } from './config/api';
 import { setupSwagger } from './config/swagger';
-import { requestIdMiddleware } from './middlewares/requestId.middleware';
 import { errorHandler } from './middlewares/errorHandler.middleware';
+import { requestIdMiddleware } from './middlewares/requestId.middleware';
 import { requestLogger } from './middlewares/requestLogger.middleware';
 import routes from './routes/health.routes';
 import { AppError } from './types/appError';
@@ -39,7 +39,7 @@ if (!config.isProd) {
   setupSwagger(app);
 }
 
-app.use('/health', routes);
+app.use('/api/v1/health', routes);
 if (!config.isTest) {
   const ssrDist = join(__dirname, `../../${config.isDev ? '../../frontend/dist/' : ''}frontend`);
   const ssrServer = require(join(ssrDist, 'server', 'server.mjs'));
@@ -52,7 +52,7 @@ if (!config.isTest) {
   app.use(ssrStatic);
   app.use((req, res, next) => {
     if (res.headersSent) return next();
-    if (req.url.startsWith('/api') || req.url.startsWith('/health')) {
+    if (req.url.startsWith('/api')) {
       return next();
     }
     return ssrHandler(req, res, next);

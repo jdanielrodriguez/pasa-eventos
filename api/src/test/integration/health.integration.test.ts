@@ -3,7 +3,7 @@ import app from '../../app'; // importa tu instancia de express
 
 describe('Health Integration', () => {
   it('should return health status for all services', async () => {
-    const response = await request(app).get('/health');
+    const response = await request(app).get('/api/v1/health');
 
     expect(response.status).toBe(200);
     expect(response.body).toHaveProperty('mysql');
