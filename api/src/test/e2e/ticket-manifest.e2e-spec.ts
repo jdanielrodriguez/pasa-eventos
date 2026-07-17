@@ -41,6 +41,7 @@ describe('Boletos: manifiesto offline + propagación (e2e)', () => {
         slug: `man-${stamp}`,
         startsAt: new Date('2028-03-01T20:00:00-06:00'),
         endsAt: new Date('2028-03-01T23:00:00-06:00'),
+        status: 'published', // ventas abiertas (fecha futura) para poder comprar
       },
     });
     eventId = event.id;
@@ -104,6 +105,9 @@ describe('Boletos: manifiesto offline + propagación (e2e)', () => {
     await prisma.webhookEvent.deleteMany({});
     await prisma.ledgerEntry.deleteMany({});
     await prisma.ledgerTransaction.deleteMany({});
+    // Borrar también las cuentas: dejarlas con su saldo cacheado (sin asientos) rompe
+    // el verifyChain GLOBAL de otras suites (balance ≠ suma de asientos).
+    await prisma.ledgerAccount.deleteMany({});
     await prisma.order.deleteMany({ where: { eventId } });
     await prisma.event.deleteMany({ where: { id: eventId } });
     await prisma.user.deleteMany({ where: { email: { contains: `_${stamp}@test.com` } } });

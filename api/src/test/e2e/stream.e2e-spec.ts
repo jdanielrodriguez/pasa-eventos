@@ -82,6 +82,9 @@ describe('SSE del checkout (e2e)', () => {
     await prisma.webhookEvent.deleteMany({});
     await prisma.ledgerEntry.deleteMany({});
     await prisma.ledgerTransaction.deleteMany({});
+    // Borrar también las cuentas: dejarlas con su saldo cacheado (sin asientos) rompe
+    // el verifyChain GLOBAL de otras suites (balance ≠ suma de asientos).
+    await prisma.ledgerAccount.deleteMany({});
     await prisma.order.deleteMany({ where: { eventId } });
     await prisma.ticket.deleteMany({ where: { eventId } });
     await prisma.event.deleteMany({ where: { id: eventId } });
@@ -103,6 +106,24 @@ describe('SSE del checkout (e2e)', () => {
     const o = await buy(1);
     await http2().get(`/api/v1/orders/${o.id}/stream?access_token=${bToken}`).expect(404);
   });
+
+  it('H4: stream-ticket → abre el SSE con ?ticket= (un solo uso); IDOR y ticket inválido', async () => {
+    const o = await buy(3);
+    // El dueño obtiene un ticket (Bearer en header, no en URL).
+    const t = await http2().post(`/api/v1/orders/${o.id}/stream-ticket`).set(bearer(token)).expect(200);
+    expect(typeof t.body.ticket).toBe('string');
+    // Otro usuario no puede emitir ticket para esta orden (IDOR → 404).
+    await http2().post(`/api/v1/orders/${o.id}/stream-ticket`).set(bearer(bToken)).expect(404);
+    // Abre el SSE con el ticket → snapshot.
+    const events = await openSse(`/api/v1/orders/${o.id}/stream?ticket=${t.body.ticket}`, async () => {
+      await new Promise((r) => setTimeout(r, 200));
+    });
+    expect(events[0]?.type).toBe('snapshot');
+    // El ticket es de un solo uso: reutilizarlo → 401.
+    await http2().get(`/api/v1/orders/${o.id}/stream?ticket=${t.body.ticket}`).expect(401);
+    // Ticket inexistente → 401.
+    await http2().get(`/api/v1/orders/${o.id}/stream?ticket=nope`).expect(401);
+  }, 15000);
 
   it('dueño: abre el stream (text/event-stream + snapshot) y recibe `order` paid al pagar', async () => {
     const o = await buy(2);

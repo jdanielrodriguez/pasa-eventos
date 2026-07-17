@@ -1,0 +1,54 @@
+<div class="modal-backdrop" (click)="close()">
+  <section class="modal-card" (click)="$event.stopPropagation()" data-testid="login-modal">
+    <button type="button" class="modal-close" [attr.aria-label]="'common.close' | translate" (click)="close()">×</button>
+    <h2>{{ 'auth.modalTitle' | translate }}</h2>
+    <p class="auth-sub">{{ 'auth.modalSubtitle' | translate }}</p>
+
+    @if (error()) {
+      <p class="form-error" data-testid="modal-error">{{ error() }}</p>
+    }
+
+    @if (!needs2fa()) {
+      <form (ngSubmit)="submit()">
+        <div class="field">
+          <label for="m-email">{{ 'auth.email' | translate }}</label>
+          <input id="m-email" type="email" name="email" autocomplete="email"
+            [attr.placeholder]="'auth.emailPlaceholder' | translate"
+            [ngModel]="email()" (ngModelChange)="email.set($event)" required />
+        </div>
+        <div class="field">
+          <label for="m-password">{{ 'auth.password' | translate }}</label>
+          <input id="m-password" type="password" name="password" autocomplete="current-password"
+            placeholder="••••••••"
+            [ngModel]="password()" (ngModelChange)="password.set($event)" required />
+        </div>
+        <button type="submit" class="primary btn-block" [disabled]="submitting()">
+          {{ submitting() ? ('auth.signingIn' | translate) : ('auth.signIn' | translate) }}
+        </button>
+      </form>
+    } @else {
+      <form (ngSubmit)="verify()">
+        <p class="auth-sub" data-testid="modal-2fa">
+          @if (method() === 'email') {
+            {{ 'auth.twofaEmailShort' | translate }}
+          } @else {
+            {{ 'auth.twofaApp' | translate }}
+          }
+        </p>
+        <div class="field">
+          <label>{{ 'auth.code' | translate }}</label>
+          <app-otp-input
+            data-testid="modal-code-input"
+            [length]="6"
+            [disabled]="submitting()"
+            [value]="code()"
+            (valueChange)="code.set($event)"
+          />
+        </div>
+        <button type="submit" class="primary btn-block" [disabled]="submitting()">
+          {{ submitting() ? ('auth.verifying' | translate) : ('auth.verify' | translate) }}
+        </button>
+      </form>
+    }
+  </section>
+</div>

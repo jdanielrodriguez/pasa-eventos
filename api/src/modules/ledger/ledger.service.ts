@@ -156,6 +156,89 @@ export class LedgerService {
   }
 
   /**
+   * Cadena contable (hash-chain) de una orden, para mostrarla al COMPRADOR como
+   * prueba de transparencia ("blockchain"). Expone solo el sobre de cada
+   * transacción (seq, tipo, fecha, hash, prevHash) + si su hash recomputado cuadra
+   * (`verified`), sin filtrar los montos de cuentas de sistema. `chainValid` = todas
+   * las transacciones de la orden verifican (barato: NO escanea el ledger completo,
+   * a diferencia de verifyChain, para no penalizar una vista de comprador).
+   */
+  async orderChain(orderId: string): Promise<{
+    orderId: string;
+    transactions: Array<{
+      seq: string;
+      kind: string;
+      createdAt: string;
+      hash: string;
+      prevHash: string;
+      verified: boolean;
+    }>;
+    chainValid: boolean;
+  }> {
+    const transactions = await this.refChain('order', orderId);
+    const chainValid = transactions.every((t) => t.verified);
+    return { orderId, transactions, chainValid };
+  }
+
+  /**
+   * Cadena contable de un EVENTO (vista "blockchain" de la LIQUIDACIÓN de caja, W7):
+   * las liquidaciones se asientan con `refType:'event'` (no tienen orden), por lo que
+   * su transparencia se expone por evento. Mismo sobre que `orderChain` (seq/tipo/
+   * fecha/hash/prevHash + `verified`), sin filtrar montos de cuentas de sistema.
+   */
+  async eventChain(eventId: string): Promise<{
+    eventId: string;
+    transactions: Array<{
+      seq: string;
+      kind: string;
+      createdAt: string;
+      hash: string;
+      prevHash: string;
+      verified: boolean;
+    }>;
+    chainValid: boolean;
+  }> {
+    const transactions = await this.refChain('event', eventId);
+    const chainValid = transactions.every((t) => t.verified);
+    return { eventId, transactions, chainValid };
+  }
+
+  /**
+   * Sobre verificable de las transacciones que referencian `(refType, refId)`, en
+   * orden de secuencia. Recompone el hash de cada una para marcar `verified` (no
+   * escanea el ledger completo: vista barata de transparencia, no auditoría global).
+   */
+  private async refChain(
+    refType: 'order' | 'event',
+    refId: string,
+  ): Promise<Array<{ seq: string; kind: string; createdAt: string; hash: string; prevHash: string; verified: boolean }>> {
+    const txs = await this.prisma.ledgerTransaction.findMany({
+      where: { refType, refId },
+      orderBy: { seq: 'asc' },
+      include: { entries: true },
+    });
+    return txs.map((t) => {
+      // refType/refId son exactamente los del filtro (no-null): usamos los literales
+      // para reproducir el hash sin ramas nullish muertas.
+      const expected = this.computeHash(
+        t.prevHash,
+        t.seq,
+        { kind: t.kind, refType, refId, entries: [] },
+        t.entries.map((e) => ({ accountId: e.accountId, amount: new Decimal(e.amount.toString()) })),
+        t.createdAt,
+      );
+      return {
+        seq: t.seq.toString(),
+        kind: t.kind,
+        createdAt: t.createdAt.toISOString(),
+        hash: t.hash,
+        prevHash: t.prevHash,
+        verified: expected === t.hash,
+      };
+    });
+  }
+
+  /**
    * Verifica la integridad del ledger: encadenado de hashes correcto, cada
    * transacción cuadra en 0, y el saldo cacheado de cada cuenta coincide con la
    * suma de sus asientos. Detecta manipulación.

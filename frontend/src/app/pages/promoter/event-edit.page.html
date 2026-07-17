@@ -1,0 +1,622 @@
+<section class="event-edit">
+  <app-back-link [link]="backLink()" testId="back-link" [label]="backLabel()" />
+
+  @if (loading()) {
+    <p class="muted">{{ 'promoter.edit.loadingEvent' | translate }}</p>
+  } @else if (notFound()) {
+    <p class="error" data-testid="edit-notfound">{{ 'promoter.edit.notFound' | translate }}</p>
+  } @else {
+    <div class="panel-header">
+      <div>
+        <h1>{{ isNew() ? ('promoter.edit.newEvent' | translate) : event()?.name }}</h1>
+        @if (event(); as ev) { <span class="badge badge-{{ ev.status }}" data-testid="ev-status-badge">{{ ev.status | statusLabel }}</span> }
+        @if (isNew()) { <span class="badge badge-draft" data-testid="new-badge">{{ 'promoter.edit.badgeNew' | translate }}</span> }
+        @if (createdByAdminId()) { <span class="badge" data-testid="created-by-support">{{ 'promoter.edit.createdBySupport' | translate }}</span> }
+      </div>
+      <div class="ev-card-actions header-actions">
+        @if (locked()) {
+          <!-- Candado CERRADO: admin no-dueño sin desbloqueo vigente (mismo candado que Pasarelas). -->
+          <app-lock-chip
+            closedTestid="unlock-btn"
+            [closedTitle]="'promoter.edit.lockedClosedTitle' | translate"
+            (unlock)="openUnlock()"
+          />
+        } @else if (unlockActive()) {
+          <!-- Candado ABIERTO + cuenta regresiva (mm:ss) del desbloqueo, estilo pasarelas. -->
+          <app-lock-chip
+            [open]="true"
+            openTestid="unlock-timer"
+            [openTitle]="'promoter.edit.unlockedOpenTitle' | translate"
+            [countdown]="'promoter.edit.lockCountdown' | translate: { time: unlockRemaining() }"
+          />
+        }
+        <button type="button" class="btn primary" [disabled]="savingData() || locked()" (click)="saveData()" data-testid="save-draft-btn"
+          [title]="locked() ? ('promoter.edit.unlockToSaveTooltip' | translate) : ('common.save' | translate)">
+          <app-icon name="save" /> {{ savingData() ? ('promoter.edit.savingShort' | translate) : ('common.save' | translate) }}
+        </button>
+        @if (!isNew() && canEditLayout()) {
+          <button type="button" class="btn primary" [disabled]="!canPublish() || locked()" (click)="askPublish()" data-testid="publish-btn"
+            [title]="publishBlock() ?? ('promoter.edit.publishEventTitle' | translate)">
+            <app-icon name="publish" /> {{ isSuspended() ? ('promoter.edit.rePublish' | translate) : ('promoter.edit.publish' | translate) }}
+          </button>
+        }
+        @if (!isNew() && event()?.status === 'draft') {
+          <button type="button" class="btn danger icon-only" [disabled]="locked()" (click)="askRemove()" data-testid="delete-btn" [attr.aria-label]="'common.delete' | translate" [title]="'promoter.edit.deleteEventTitle' | translate">
+            <app-icon name="delete" />
+          </button>
+        }
+        @if (isPublished()) {
+          <button type="button" class="btn" [disabled]="locked()" (click)="askSuspend()" data-testid="suspend-btn" [title]="'promoter.edit.suspendEventTitle' | translate">
+            <app-icon name="cancel" /> {{ 'promoter.edit.suspendEvent' | translate }}
+          </button>
+        }
+        @if (isPublished() || isSuspended()) {
+          <button type="button" class="btn danger" [disabled]="locked()" (click)="askCancelEvent()" data-testid="cancel-btn" [title]="'promoter.edit.cancelEvent' | translate">
+            <app-icon name="cancel" /> {{ 'promoter.edit.cancelEvent' | translate }}
+          </button>
+        }
+      </div>
+    </div>
+
+    @if (locked()) {
+      <p class="lock-banner" data-testid="lock-banner">
+        <app-icon name="lock" />
+        <span [innerHTML]="'promoter.edit.lockBanner' | translate"></span>
+      </p>
+    }
+
+    <!-- Aviso GRANDE de boletos vendidos: visible en TODAS las tabs (fuera del
+         switch de tabs). Especialmente relevante al reconfigurar un suspendido. -->
+    @if (!isNew() && soldTicketsCount() > 0) {
+      <div class="sold-warning" role="alert" data-testid="sold-warning">
+        <app-icon name="cancel" />
+        <div class="sold-warning-body">
+          <strong>{{ 'promoter.edit.soldWarningTitle' | translate }}</strong>
+          <p>{{ 'promoter.edit.soldWarningBody' | translate: { n: soldTicketsCount() } }}</p>
+          <a [routerLink]="'/terminos'" fragment="reembolsos" data-testid="sold-warning-link">
+            {{ 'promoter.edit.soldWarningLink' | translate }} →
+          </a>
+        </div>
+      </div>
+    }
+
+    @if (isNew()) {
+      <p class="muted small" data-testid="new-note" [innerHTML]="'promoter.edit.newNote' | translate"></p>
+    } @else if (publishBlock()) {
+      <p class="muted small" data-testid="publish-block">{{ 'promoter.edit.publishBlockPrefix' | translate }} {{ publishBlock() }}</p>
+    }
+
+    @if (isPublished()) {
+      <p class="muted small" data-testid="published-note">
+        {{ 'promoter.edit.publishedNote' | translate }}
+      </p>
+    } @else if (isSuspended()) {
+      <p class="muted small" data-testid="suspended-note">
+        {{ 'promoter.edit.suspendedNote' | translate }}
+      </p>
+    }
+
+    @if (!isNew()) {
+      <nav class="config-tabs" [attr.aria-label]="'promoter.edit.sectionsAria' | translate">
+        <button type="button" [class.active]="tab() === 'datos'" (click)="selectTab('datos')" data-testid="tab-datos">{{ 'promoter.edit.tabData' | translate }}</button>
+        <button type="button" [class.active]="tab() === 'localidades'" (click)="selectTab('localidades')" data-testid="tab-localidades">{{ 'promoter.edit.tabLocalities' | translate }}</button>
+        <button type="button" [class.active]="tab() === 'banner'" (click)="selectTab('banner')" data-testid="tab-banner">{{ 'promoter.edit.tabBanner' | translate }}</button>
+        <button type="button" [class.active]="tab() === 'config'" (click)="selectTab('config')" data-testid="tab-config">{{ 'promoter.edit.tabConfig' | translate }}</button>
+        <button type="button" [class.active]="tab() === 'cuentas'" (click)="selectTab('cuentas')" data-testid="tab-cuentas">{{ 'promoter.edit.tabAccounts' | translate }}</button>
+        <button type="button" [class.active]="tab() === 'dashboard'" (click)="selectTab('dashboard')" data-testid="tab-dashboard">{{ 'promoter.edit.tabDashboard' | translate }}</button>
+      </nav>
+    }
+
+    <fieldset class="lock-fieldset" [disabled]="locked()">
+    @if (isNew() || tab() === 'datos') {
+      <div class="card-block">
+        <div class="form-grid">
+          @if (isNew() && isAdmin()) {
+            <label class="field full"><span>{{ 'promoter.edit.selectPromoter' | translate }}</span>
+              <select [ngModel]="newPromoterId()" (ngModelChange)="newPromoterId.set($event)" name="promoter" data-testid="ed-promoter" required>
+                <option value="">{{ 'promoter.edit.selectPromoterHint' | translate }}</option>
+                @for (p of promoters(); track p.id) {
+                  <option [value]="p.id">{{ p.firstName }}{{ p.lastName ? ' ' + p.lastName : '' }} ({{ p.email }})</option>
+                }
+              </select>
+            </label>
+            <p class="field full muted small">{{ 'promoter.edit.selectPromoterNote' | translate }}</p>
+          }
+          <label class="field"><span>{{ 'common.name' | translate }}</span>
+            <input type="text" [ngModel]="d.name()" (ngModelChange)="d.name.set($event)" name="name" data-testid="ed-name" />
+          </label>
+          <label class="field"><span>{{ 'promoter.edit.fieldCategory' | translate }}</span>
+            <select [ngModel]="d.categoryId()" (ngModelChange)="d.categoryId.set($event)" name="cat">
+              <option value="">{{ 'promoter.edit.noCategory' | translate }}</option>
+              @for (c of categories(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+            </select>
+          </label>
+          @if (halls().length > 0) {
+            <label class="field full"><span>{{ 'promoter.edit.fieldHall' | translate }}</span>
+              <select [ngModel]="d.hallId()" (ngModelChange)="onHallChange($event)" name="hall" data-testid="ed-hall">
+                <option value="">{{ 'promoter.edit.noHall' | translate }}</option>
+                @for (h of halls(); track h.id) { <option [value]="h.id">{{ h.name }}{{ h.city ? ' · ' + h.city : '' }}</option> }
+              </select>
+            </label>
+            <p class="field full muted small">{{ 'promoter.edit.hallHint' | translate }}</p>
+          }
+          <label class="field full"><span>{{ 'promoter.edit.fieldStart' | translate }}</span>
+            <input type="datetime-local" [ngModel]="d.startsAt()" (ngModelChange)="d.startsAt.set($event)" name="starts" data-testid="ed-start" />
+          </label>
+          <label class="field full"><span>{{ 'promoter.edit.fieldAddress' | translate }}</span>
+            <input type="text" [ngModel]="d.address()" (ngModelChange)="d.address.set($event)" name="addr" data-testid="ed-address" />
+          </label>
+          <div class="field full">
+            <button type="button" class="btn small" (click)="toggleMap()" data-testid="ed-map-toggle" [attr.aria-expanded]="showMap()" [title]="'promoter.edit.locateOnMap' | translate">
+              <app-icon name="search" /> {{ showMap() ? ('promoter.edit.hideMap' | translate) : ('promoter.edit.locateOnMap' | translate) }}
+            </button>
+            @if (showMap()) {
+              <app-map-picker
+                [lat]="d.lat()"
+                [lng]="d.lng()"
+                [address]="d.address()"
+                (locationChange)="onMapLocation($event)"
+                data-testid="ed-map"
+              />
+            }
+          </div>
+          <label class="field full"><span>{{ 'promoter.edit.fieldDescription' | translate }}</span>
+            <textarea [ngModel]="d.description()" (ngModelChange)="d.description.set($event)" name="desc" rows="3"></textarea>
+          </label>
+        </div>
+        <button type="button" class="btn primary" [disabled]="savingData()" (click)="saveData()" data-testid="ed-save" [title]="'promoter.edit.saveData' | translate">
+          <app-icon name="save" /> {{ savingData() ? ('promoter.edit.savingShort' | translate) : (isNew() ? ('promoter.edit.createEvent' | translate) : ('promoter.edit.saveData' | translate)) }}
+        </button>
+      </div>
+    }
+
+    @if (!isNew()) {
+      @switch (tab()) {
+        @case ('localidades') {
+          <div class="card-block">
+            @if (localities().length > 0) {
+              <div class="loc-toolbar">
+                <button type="button" class="btn small" (click)="toggleLocSearch()" data-testid="loc-search-toggle"
+                  [title]="locSearchOpen() ? ('promoter.edit.hideSearch' | translate) : ('promoter.edit.searchLocalityTitle' | translate)">
+                  <app-icon name="search" /> {{ locSearchOpen() ? ('promoter.edit.hideSearch' | translate) : ('common.search' | translate) }}
+                </button>
+                @if (locSearchOpen()) {
+                  <input type="search" class="loc-search-input" [attr.placeholder]="'promoter.edit.searchLocalityPlaceholder' | translate"
+                    [ngModel]="locSearch()" (ngModelChange)="locSearch.set($event)" name="locsearch" data-testid="loc-search-input" />
+                }
+              </div>
+              <ul class="loc-manage-list" data-testid="loc-list">
+                @for (l of filteredLocalities(); track l.id) {
+                  <li class="loc-manage-item">
+                    <div class="loc-manage-head">
+                      <span class="loc-name">{{ l.name }}</span>
+                      <span class="badge">{{ l.kind === 'seated' ? ('promoter.edit.kindSeated' | translate) : ('promoter.edit.kindGeneral' | translate) }}</span>
+                      @if (l.capacity != null) { <span class="muted small">{{ 'promoter.edit.capacityLabel' | translate: { n: l.capacity } }}</span> }
+                      @if (l.kind === 'seated' && (l.capacity ?? 0) === 0) {
+                        <span class="badge badge-warn" data-testid="loc-noseats">{{ 'promoter.edit.noSeats' | translate }}</span>
+                      }
+                      @if (l.desiredNet != null) { <span class="muted small">{{ 'promoter.edit.netLabel' | translate: { n: l.desiredNet } }}</span> }
+                      <span class="loc-manage-actions">
+                        @if (l.kind === 'seated') {
+                          <!-- Enlace (no botón): sigue accesible aunque el evento esté
+                               bloqueado por admin → abre el mapa en modo lectura.
+                               Se oculta mientras ESA localidad está en edición. -->
+                          @if (editingLoc()?.id !== l.id) {
+                            <a class="btn small primary" [routerLink]="seatsLink(l)" [queryParams]="seatsQuery()" data-testid="loc-seats"
+                              [title]="!canEdit() ? ('promoter.edit.viewSeatMap' | translate) : ('promoter.edit.openSeatEditor' | translate)">
+                              <app-icon name="seats" /> {{ !canEdit() ? ('promoter.edit.viewSeats' | translate) : ('promoter.edit.manageSeats' | translate) }}
+                            </a>
+                          }
+                        } @else {
+                          <span class="muted small loc-general-note" data-testid="loc-general-note">{{ 'promoter.edit.soldByCapacity' | translate }}</span>
+                        }
+                        @if (canEdit()) {
+                          @if (editingLoc()?.id !== l.id) {
+                            <button type="button" class="btn small" (click)="startEditLocality(l)" data-testid="loc-edit" [title]="'promoter.edit.editLocalityTitle' | translate">
+                              <app-icon name="edit" /> {{ 'common.edit' | translate }}
+                            </button>
+                          }
+                          <button type="button" class="btn small danger icon-only" (click)="askRemoveLocality(l)" data-testid="loc-remove" [attr.aria-label]="'common.delete' | translate" [title]="'promoter.edit.deleteLocalityTitle' | translate">
+                            <app-icon name="delete" />
+                          </button>
+                        }
+                      </span>
+                    </div>
+                  </li>
+                } @empty {
+                  <p class="muted" data-testid="loc-search-empty">{{ 'promoter.edit.noLocalityMatch' | translate }}</p>
+                }
+              </ul>
+            } @else {
+              <p class="muted" data-testid="loc-empty">{{ 'promoter.edit.noLocalities' | translate }}</p>
+            }
+
+            @if (canEdit()) {
+              <!-- Patrón botón → form: por defecto solo el botón; se abre al pulsar. -->
+              @if (!showLocForm()) {
+                <button type="button" class="btn primary" (click)="toggleLocForm()" data-testid="loc-add-toggle" [title]="'promoter.edit.addLocality' | translate">
+                  <app-icon name="add" /> {{ 'promoter.edit.addLocality' | translate }}
+                </button>
+              } @else {
+                <div class="card-block loc-add-block" data-testid="loc-add-form">
+                  <h3>{{ editingLoc() ? ('promoter.edit.editLocalityTitle' | translate) : ('promoter.edit.addLocality' | translate) }}</h3>
+                  <div class="loc-form-grid">
+                    <label class="field"><span>{{ 'common.name' | translate }}</span>
+                      <input type="text" [attr.placeholder]="'promoter.edit.localityNamePlaceholder' | translate" [ngModel]="locForm.name()" (ngModelChange)="locForm.name.set($event)" name="ln" data-testid="loc-name" />
+                    </label>
+                    <label class="field"><span>{{ 'promoter.edit.fieldKind' | translate }}</span>
+                      <select [ngModel]="locForm.kind()" (ngModelChange)="locForm.kind.set($event)" name="lk">
+                        <option value="general">{{ 'promoter.edit.kindGeneralOption' | translate }}</option>
+                        <option value="seated">{{ 'promoter.edit.kindSeatedOption' | translate }}</option>
+                      </select>
+                    </label>
+                    @if (locForm.kind() === 'general') {
+                      <label class="field"><span>{{ 'promoter.edit.fieldCapacity' | translate }}</span>
+                        <input type="number" [attr.placeholder]="'promoter.edit.fieldCapacity' | translate" min="1" [ngModel]="locForm.capacity()" (ngModelChange)="locForm.capacity.set($event)" name="lc" />
+                      </label>
+                    }
+                    <label class="field"><span>{{ 'promoter.edit.fieldNet' | translate }}</span>
+                      <input type="number" [attr.placeholder]="'promoter.edit.netPlaceholder' | translate" min="0" step="0.01" [ngModel]="locForm.desiredNet()" (ngModelChange)="onNetChange($event)" name="ln2" data-testid="loc-net" />
+                    </label>
+                  </div>
+
+                  @if (previewLoading()) {
+                    <p class="muted small" data-testid="price-preview-loading">{{ 'promoter.edit.calculatingPrice' | translate }}</p>
+                  } @else {
+                    @if (pricePreview(); as q) {
+                      <div class="price-preview" data-testid="price-preview">
+                        <span class="pp-total" [innerHTML]="'promoter.edit.buyerPays' | translate: { total: q.total }"></span>
+                        <ul class="pp-breakdown">
+                          <li [innerHTML]="'promoter.edit.ppNet' | translate: { n: q.net }"></li>
+                          <li>{{ 'promoter.edit.ppPlatform' | translate: { n: q.platformFee } }}</li>
+                          <li>{{ 'promoter.edit.ppGateway' | translate: { n: q.gatewayFee } }}</li>
+                          <li>{{ 'promoter.edit.ppIva' | translate: { n: q.iva } }}</li>
+                          <li class="pp-service">{{ 'promoter.edit.ppService' | translate: { n: q.serviceFee } }}</li>
+                        </ul>
+                      </div>
+                    }
+                  }
+
+                  <div class="loc-form-actions">
+                    <button type="button" class="btn primary" (click)="addLocality()" data-testid="loc-add" [title]="editingLoc() ? ('promoter.edit.saveLocality' | translate) : ('promoter.edit.addLocality' | translate)">
+                      <app-icon name="save" /> {{ editingLoc() ? ('promoter.edit.saveLocality' | translate) : ('promoter.edit.addLocality' | translate) }}
+                    </button>
+                    <button type="button" class="btn" (click)="toggleLocForm()" data-testid="loc-add-cancel" [title]="'common.cancel' | translate">
+                      <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+                    </button>
+                  </div>
+                  <p class="muted small">{{ 'promoter.edit.localityKindsHint' | translate }}</p>
+                </div>
+              }
+            }
+          </div>
+        }
+
+        @case ('banner') {
+          <div class="card-block banner-section">
+            <!-- Opción A: subir un banner ya hecho -->
+            <div class="banner-option" data-testid="banner-upload">
+              <h3>{{ 'promoter.edit.bannerUploadTitle' | translate }}</h3>
+              <p class="muted small">{{ 'promoter.edit.bannerUploadHint' | translate }}</p>
+              <label class="btn" [class.disabled]="uploadingBanner() || locked()">
+                <app-icon name="add" /> {{ uploadingBanner() ? ('promoter.edit.uploading' | translate) : ('promoter.edit.chooseImage' | translate) }}
+                <input type="file" accept="image/*" hidden (change)="onBannerFile($event)" data-testid="bn-file" [disabled]="uploadingBanner() || locked()" />
+              </label>
+            </div>
+
+            <!-- PREVIEW antes de subir: se muestra ARRIBA del bloque "Generar con IA".
+                 Guardar sube de verdad; Cancelar descarta sin subir. -->
+            @if (pendingBannerUrl(); as purl) {
+              <div class="banner-preview-pending" data-testid="bn-preview-pending">
+                <p class="muted small">{{ 'promoter.edit.bannerPreviewHint' | translate }}</p>
+                <div class="banner-box">
+                  <img [src]="purl" [alt]="'promoter.edit.bannerAlt' | translate" data-testid="bn-preview-img" />
+                </div>
+                <div class="loc-form-actions">
+                  <button type="button" class="btn primary" [disabled]="uploadingBanner() || locked()" (click)="saveBannerPreview()" data-testid="bn-preview-save" [title]="'common.save' | translate">
+                    <app-icon name="save" /> {{ uploadingBanner() ? ('promoter.edit.uploading' | translate) : ('common.save' | translate) }}
+                  </button>
+                  <button type="button" class="btn" [disabled]="uploadingBanner()" (click)="cancelBannerPreview()" data-testid="bn-preview-cancel" [title]="'common.cancel' | translate">
+                    <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+                  </button>
+                </div>
+              </div>
+            }
+
+            <div class="banner-divider"><span>{{ 'promoter.edit.orDivider' | translate }}</span></div>
+
+            <!-- Opción B: generar con IA (form dentro de un desplegable) -->
+            <div class="banner-option" data-testid="banner-ai">
+              <button type="button" class="btn" (click)="toggleAiForm()" data-testid="bn-ai-toggle" [attr.aria-expanded]="showAiForm()" [disabled]="locked()"
+                [title]="'promoter.edit.generateAiTitle' | translate">
+                <app-icon name="banner" /> {{ 'promoter.edit.generateWithAi' | translate }} {{ showAiForm() ? '▲' : '▼' }}
+              </button>
+              @if (showAiForm()) {
+                <div class="banner-ai-form" data-testid="bn-ai-form">
+                  <div class="form-grid">
+                    <label class="field"><span>{{ 'promoter.edit.fieldTemplate' | translate }}</span>
+                      <select [ngModel]="banner.template()" (ngModelChange)="banner.template.set($event)" name="tpl" data-testid="bn-template">
+                        @for (t of bannerTemplates; track t) { <option [value]="t">{{ t }}</option> }
+                      </select>
+                    </label>
+                    <label class="field full"><span>{{ 'promoter.edit.fieldPrompt' | translate }}</span>
+                      <textarea [ngModel]="banner.prompt()" (ngModelChange)="banner.prompt.set($event)" name="bp" rows="2" [attr.placeholder]="'promoter.edit.promptPlaceholder' | translate" data-testid="bn-prompt"></textarea>
+                    </label>
+                    <label class="field full"><span>{{ 'promoter.edit.fieldSampleImages' | translate }}</span>
+                      <input type="text" [ngModel]="banner.sampleImages()" (ngModelChange)="banner.sampleImages.set($event)" name="bi" />
+                    </label>
+                  </div>
+                  <button type="button" class="btn primary" [disabled]="generatingBanner()" (click)="generateBanner()" data-testid="bn-generate" [title]="'promoter.edit.generateBanner' | translate">
+                    <app-icon name="banner" /> {{ generatingBanner() ? ('promoter.edit.generating' | translate) : ('promoter.edit.generateBanner' | translate) }}
+                  </button>
+                </div>
+              }
+            </div>
+
+            @if (bannerUrl(); as url) {
+              <div class="banner-box banner-current" data-testid="bn-current">
+                <img [src]="url" [alt]="'promoter.edit.bannerAlt' | translate" data-testid="bn-preview" />
+              </div>
+            } @else if (hasBanner()) {
+              <p class="muted small" data-testid="bn-present">{{ 'promoter.edit.bannerPresent' | translate }}</p>
+            } @else {
+              <p class="muted small" data-testid="bn-empty">{{ 'promoter.edit.bannerEmpty' | translate }}</p>
+            }
+          </div>
+        }
+
+        @case ('config') {
+          <div class="card-block">
+            <!-- Pasarela EDITABLE en borrador o suspendido (v3.10): el backend permite
+                 cambiarla en suspendido aunque el evento tuviera compras. Solo se
+                 bloquea cuando está publicado/finalizado (congelada). -->
+            <label class="field"><span>{{ 'promoter.edit.fieldGateway' | translate }}</span>
+              <select [ngModel]="c.gatewayId()" (ngModelChange)="c.gatewayId.set($event)" name="gw" [disabled]="!canEditLayout()" data-testid="cfg-gateway">
+                <option value="">{{ 'promoter.edit.gatewayDefault' | translate }}</option>
+                @for (g of gateways(); track g.id) { <option [value]="g.id">{{ g.name }}</option> }
+              </select>
+            </label>
+            <p class="muted small">{{ 'promoter.edit.gatewayHint' | translate }} {{ (isFrozen() && !canEditLayout()) ? ('promoter.edit.gatewayFrozen' | translate) : '' }}</p>
+
+            <div class="check-row">
+              <app-switch [checked]="c.ivaOnNet()" (checkedChange)="c.ivaOnNet.set($event)" [disabled]="!canEditLayout()"
+                [label]="'promoter.edit.ivaOnNetLabel' | translate" testId="cfg-iva" />
+            </div>
+
+            <div class="check-row">
+              <app-switch [checked]="c.absorbInstallmentCost()" (checkedChange)="c.absorbInstallmentCost.set($event)" [disabled]="!canEditLayout()"
+                [label]="'promoter.edit.absorbLabel' | translate" testId="cfg-absorb" />
+            </div>
+
+            <button type="button" class="btn primary" [disabled]="savingConfig()" (click)="saveConfig()" data-testid="cfg-save" [title]="'promoter.edit.saveConfig' | translate">
+              <app-icon name="save" /> {{ savingConfig() ? ('promoter.edit.savingShort' | translate) : ('promoter.edit.saveConfig' | translate) }}
+            </button>
+          </div>
+        }
+
+        @case ('cuentas') {
+          <!-- DUEÑO (promotor o admin impersonando) y ADMIN REAL: detalle de cuentas
+               (Total recaudado / Servicios / Total del promotor) + transacciones. El
+               admin real ya NO necesita impersonar para ver las cuentas; solo las
+               DEVOLUCIONES (canRefund) siguen siendo del dueño. -->
+          @if (canSeeAccounts()) {
+          <div class="card-block">
+            <h2>{{ 'promoter.edit.accountsTitle' | translate }}</h2>
+            <app-event-settlement [eventId]="eventId()" [showSplit]="false" [reloadToken]="settlementReloadToken()" />
+          </div>
+
+          <!-- Devoluciones (OWNER): evento suspendido/cancelado. Devuelve SOLO el neto
+               a la wallet del comprador; la cuota de servicio no. -->
+          @if (canRefund()) {
+            <div class="card-block refunds-block" data-testid="refunds-block">
+              <h3>{{ 'promoter.edit.refundHeading' | translate }}</h3>
+              <p class="muted small">{{ 'promoter.edit.refundIntro' | translate }}</p>
+              @if (refundResult(); as r) {
+                <p class="cash-transfer-result" data-testid="refund-result" role="status">
+                  <app-icon name="accounts" />
+                  {{ 'promoter.edit.refundSummary' | translate: { refunded: r.refundedOrders, skipped: r.skipped, currency: r.currency, amount: r.totalNetRefunded } }}
+                </p>
+              }
+              @if (refundError(); as err) {
+                <p class="error" data-testid="refund-error">{{ err }}</p>
+              }
+              <button type="button" class="btn danger" [disabled]="refunding()" (click)="askRefundAll()" data-testid="ev-refund-all"
+                [title]="'promoter.edit.refundAllBtn' | translate">
+                <app-icon name="accounts" /> {{ refunding() ? ('promoter.edit.refunding' | translate) : ('promoter.edit.refundAllBtn' | translate) }}
+              </button>
+            </div>
+          }
+
+          <div class="card-block" data-testid="tx-block">
+            <h3>{{ 'promoter.tx.title' | translate }}</h3>
+            @if (!txLoaded() || (txLoading() && txAll().length === 0)) {
+              <app-loading data-testid="tx-loading" [label]="'common.loading' | translate" />
+            } @else if (txAll().length === 0) {
+              <app-empty-state
+                variant="billing"
+                data-testid="tx-empty"
+                [title]="'promoter.tx.emptyTitle' | translate"
+                [subtitle]="'promoter.tx.empty' | translate"
+              />
+            } @else {
+              <div class="tx-table-scroll">
+                <table class="tx-table" data-testid="tx-table">
+                  <thead>
+                    <tr>
+                      <th>{{ 'promoter.tx.colBuyer' | translate }}</th>
+                      <th>{{ 'promoter.tx.colDate' | translate }}</th>
+                      <th>{{ 'promoter.tx.colLocalities' | translate }}</th>
+                      <th class="tx-num">{{ 'promoter.tx.colItems' | translate }}</th>
+                      <th>{{ 'promoter.tx.colStatus' | translate }}</th>
+                      <th class="tx-num">{{ 'promoter.tx.colTotal' | translate }}</th>
+                      @if (canRefund()) { <th>{{ 'promoter.edit.refundColAction' | translate }}</th> }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (t of pageTransactions(); track t.id) {
+                      <tr class="tx-row" (click)="openTx(t.id)" (keydown.enter)="openTx(t.id)"
+                        tabindex="0" role="button" data-testid="tx-row"
+                        [title]="'promoter.tx.openDetail' | translate">
+                        <td>
+                          <span class="tx-buyer-name">{{ t.buyerName || ('promoter.tx.anonymous' | translate) }}</span>
+                          @if (t.buyerEmail) { <span class="muted small tx-buyer-email">{{ t.buyerEmail }}</span> }
+                        </td>
+                        <td>{{ t.createdAt | localizedDate: 'medium' }}</td>
+                        <td>{{ t.localities.length ? t.localities.join(', ') : '—' }}</td>
+                        <td class="tx-num">{{ t.itemCount }}</td>
+                        <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
+                        <td class="tx-num">{{ t.total | money }}</td>
+                        @if (canRefund()) {
+                          <td>
+                            @if (t.status === 'paid') {
+                              <button type="button" class="btn small danger" (click)="$event.stopPropagation(); askRefundOne(t)" [disabled]="refunding()"
+                                data-testid="ev-refund-one" [title]="'promoter.edit.refundBtn' | translate">
+                                <app-icon name="accounts" /> {{ 'promoter.edit.refundBtn' | translate }}
+                              </button>
+                            } @else {
+                              <span class="muted small">—</span>
+                            }
+                          </td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              <app-pager
+                [page]="txPage()"
+                [totalPages]="txTotalPages()"
+                [label]="'promoter.tx.pagerLabel' | translate"
+                (pageChange)="setTxPage($event)"
+              />
+            }
+          </div>
+          }
+        }
+
+        @case ('dashboard') {
+          <div class="card-block" data-testid="dashboard-panel">
+            <h2>{{ 'promoter.edit.dashboardTitle' | translate }}</h2>
+            @if (!isNew() && eventId()) {
+              <app-event-dashboard [eventId]="eventId()" [showSplit]="isAdmin()" />
+            } @else {
+              <p class="muted">{{ 'promoter.edit.dashboardSoon' | translate }}</p>
+            }
+          </div>
+        }
+      }
+    }
+    </fieldset>
+
+    <!-- Mapa combinado (solo lectura) de TODAS las localidades con asientos.
+         Fuera del fieldset bloqueable: se puede ver/plegar aunque el evento esté
+         bloqueado por admin. Solo en el tab Localidades. -->
+    @if (!isNew() && tab() === 'localidades' && seatedLocalities().length > 0) {
+      <div class="card-block combined-map-block" data-testid="combined-map-block">
+        <div class="combined-map-head">
+          <h3>{{ 'promoter.seatMap.title' | translate }}</h3>
+          <button type="button" class="btn small" (click)="toggleCombinedMap()" data-testid="combined-map-toggle"
+            [attr.aria-expanded]="showCombinedMap()" [title]="'promoter.seatMap.toggleTitle' | translate">
+            <app-icon name="seats" />
+            {{ showCombinedMap() ? ('promoter.seatMap.hide' | translate) : ('promoter.seatMap.show' | translate) }}
+          </button>
+        </div>
+        <p class="muted small">{{ 'promoter.seatMap.hint' | translate }}</p>
+        @if (showCombinedMap()) {
+          <app-event-seat-map [eventId]="eventId()" [localities]="seatedLocalities()" data-testid="combined-map" />
+        }
+      </div>
+    }
+
+    <!-- Cierre + transferencia de saldos de caja: SOLO admin REAL. SIEMPRE visible
+         (no se oculta); el botón se DESHABILITA mientras el evento no esté suspendido,
+         cancelado o finalizado. Fuera del fieldset → NUNCA se bloquea por el candado
+         de edición. El promotor / la impersonación NO ven esta sección. -->
+    @if (tab() === 'cuentas' && canSeeFinalize()) {
+      <div class="card-block cash-transfer-block" data-testid="cash-transfer">
+        <h3>{{ 'promoter.edit.cashTransferHeading' | translate }}</h3>
+        <p class="muted small">{{ 'promoter.edit.cashTransferIntro' | translate }}</p>
+
+        @if (cashResult(); as r) {
+          <div class="cash-transfer-result" data-testid="cash-transfer-result" role="status">
+            <p><app-icon name="save" /> {{ 'promoter.edit.cashTransferSummary' | translate: { amount: r.transferred, currency: r.currency } }}</p>
+            <p class="muted small">{{ 'promoter.edit.cashTransferState' | translate: { state: (r.status | statusLabel) } }}</p>
+          </div>
+        } @else {
+          <!-- Neto del promotor que se acreditará (informativo para el admin real). -->
+          @if (settlementNet(); as net) {
+            <p class="settlement-line highlight" data-testid="cash-transfer-net">
+              <span>{{ 'promoter.edit.cashTransferNetLabel' | translate }}</span>
+              <strong>{{ settlementCurrency() }} {{ net }}</strong>
+            </p>
+          } @else if (settlementNetLoading()) {
+            <app-loading data-testid="cash-transfer-net-loading" [label]="'common.loading' | translate" />
+          }
+          @if (cashError(); as err) {
+            <p class="error" data-testid="cash-transfer-error">{{ err }}</p>
+          }
+          <!-- Deshabilitado mientras el evento no esté suspendido/cancelado/finalizado.
+               El aviso explica por qué (transparencia). -->
+          @if (!canFinalizeNow()) {
+            <p class="muted small" data-testid="cash-transfer-locked-hint">
+              {{ 'promoter.edit.cashTransferLockedHint' | translate }}
+            </p>
+          }
+          <button type="button" class="btn primary" [disabled]="finalizing() || !canFinalizeNow()" (click)="askFinalizeCash()" data-testid="cash-transfer-btn"
+            [title]="(canFinalizeNow() ? 'promoter.edit.cashTransferBtn' : 'promoter.edit.cashTransferLockedHint') | translate">
+            <app-icon name="accounts" /> {{ finalizing() ? ('promoter.edit.cashTransferring' | translate) : ('promoter.edit.cashTransferBtn' | translate) }}
+          </button>
+        }
+      </div>
+    }
+  }
+
+  @if (showUnlockModal()) {
+    <div class="modal-backdrop" data-testid="unlock-modal">
+      <div class="modal-card">
+        <h3>{{ 'promoter.edit.unlockEdit' | translate }}</h3>
+        @if (!unlockSent()) {
+          <p class="muted small">
+            {{ 'promoter.edit.unlockIntro' | translate }}
+          </p>
+          <div class="ev-card-actions">
+            <button type="button" class="btn primary" [disabled]="unlockSending()" (click)="requestUnlock()" data-testid="unlock-request" [title]="'promoter.edit.sendCodeTitle' | translate">
+              <app-icon name="unlock" /> {{ unlockSending() ? ('common.sending' | translate) : ('promoter.edit.sendCodeToEmail' | translate) }}
+            </button>
+            <button type="button" class="btn" (click)="closeUnlock()" [title]="'common.cancel' | translate">
+              <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+            </button>
+          </div>
+        } @else {
+          <p class="muted small">{{ 'promoter.edit.unlockCodePrompt' | translate }}</p>
+          <label class="field"><span>{{ 'promoter.edit.fieldCode' | translate }}</span>
+            <app-otp-input [length]="6" [disabled]="unlocking()" [value]="unlockCode()" (valueChange)="unlockCode.set($event)" data-testid="unlock-code" />
+          </label>
+          <div class="ev-card-actions">
+            <button type="button" class="btn primary" [disabled]="unlocking()" (click)="verifyUnlock()" data-testid="unlock-verify" [title]="'promoter.edit.validateCodeTitle' | translate">
+              <app-icon name="save" /> {{ unlocking() ? ('promoter.edit.validating' | translate) : ('promoter.edit.unlock' | translate) }}
+            </button>
+            <button type="button" class="btn" (click)="closeUnlock()" [title]="'common.cancel' | translate">
+              <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  @if (confirm.request(); as cf) {
+    <app-confirm-dialog
+      [title]="cf.title"
+      [message]="cf.message"
+      [confirmLabel]="cf.confirmLabel ?? ('common.delete' | translate)"
+      [confirmIcon]="cf.confirmIcon ?? 'delete'"
+      [danger]="cf.danger ?? true"
+      [titleIcon]="cf.titleIcon"
+      [auditAction]="cf.auditAction"
+      [auditResource]="cf.auditResource"
+      (accept)="confirm.accept()"
+      (cancelled)="confirm.cancel()"
+    />
+  }
+</section>

@@ -1,0 +1,100 @@
+<section class="promoter-panel">
+  <div class="panel-header">
+    <div>
+      <h1>{{ 'promoter.panel.title' | translate }}</h1>
+      <p class="muted">{{ 'promoter.panel.subtitle' | translate }}</p>
+    </div>
+    <div class="panel-header-actions">
+      <a class="btn btn-outline" routerLink="/promotor/dashboard" data-testid="go-dashboard" [title]="'promoter.dash.title' | translate">
+        <app-icon name="accounts" /> {{ 'promoter.dash.title' | translate }}
+      </a>
+      <button type="button" class="btn primary" (click)="newEvent()" data-testid="toggle-create" [title]="'promoter.panel.newEvent' | translate">
+        <app-icon name="add" /> {{ 'promoter.panel.newEvent' | translate }}
+      </button>
+    </div>
+  </div>
+
+  @if (!loading() && events().length > 0) {
+    <div class="list-filters" data-testid="panel-filters">
+      <app-search-field
+        [value]="search()"
+        (valueChange)="search.set($event); onFilterChange()"
+        (searched)="search.set($event); onFilterChange()"
+        [placeholder]="'promoter.panel.searchPlaceholder' | translate"
+        name="q"
+        testId="panel-search"
+      />
+      <select [ngModel]="filterGroup()" (ngModelChange)="filterGroup.set($event); onFilterChange()" name="status" data-testid="panel-filter-status">
+        @for (o of filterOptions; track o.value) {
+          <option [value]="o.value">{{ o.key | translate }}</option>
+        }
+      </select>
+    </div>
+  }
+
+  @if (loading()) {
+    <p class="muted">{{ 'promoter.panel.loading' | translate }}</p>
+  } @else if (events().length === 0) {
+    <p class="muted" data-testid="events-empty">{{ 'promoter.panel.empty' | translate }}</p>
+  } @else {
+    <div class="events-grid" data-testid="events-grid">
+      @for (ev of pageEvents(); track ev.id) {
+        <article class="ev-card" data-testid="ev-card">
+          <div class="ev-card-top">
+            <span class="badge badge-{{ ev.status }}">{{ ev.status | statusLabel }}</span>
+            <span class="ev-card-loc muted small">{{ 'promoter.panel.localitiesCount' | translate: { n: ev._count.localities } }}</span>
+            @if (ev.status === 'draft' || ev.status === 'suspended') {
+              <button type="button" class="btn icon-only primary" (click)="askPublish(ev)" data-testid="ev-publish"
+                [title]="'promoter.panel.publish' | translate" [attr.aria-label]="'promoter.panel.publish' | translate">
+                <app-icon name="publish" />
+              </button>
+            } @else {
+              <span class="ev-card-top-spacer" aria-hidden="true"></span>
+            }
+          </div>
+          <a class="ev-card-name" [routerLink]="['/promotor/eventos', ev.id, 'editar']" data-testid="ev-name-link">
+            @if (isTestUser()) { <span class="test-chip" data-testid="ev-test-chip">TEST</span> }
+            {{ ev.name }}
+          </a>
+          <time class="muted small">{{ ev.startsAt | localizedDate: 'EEE d MMM y, HH:mm' }}</time>
+          <div class="ev-card-actions">
+            <a class="btn small" [routerLink]="['/promotor/eventos', ev.id, 'editar']" data-testid="ev-edit" [title]="'promoter.panel.editTitle' | translate">
+              <app-icon name="edit" /> {{ 'common.edit' | translate }}
+            </a>
+            @if (ev.status === 'draft') {
+              <button type="button" class="btn small danger icon-only" (click)="askRemove(ev)" data-testid="ev-delete" [attr.aria-label]="'common.delete' | translate" [title]="'promoter.panel.deleteTitle' | translate">
+                <app-icon name="delete" />
+              </button>
+            }
+            @if (ev.status === 'published') {
+              <button type="button" class="btn small" (click)="askSuspend(ev)" data-testid="ev-suspend" [title]="'promoter.panel.suspendTitle' | translate">
+                <app-icon name="cancel" /> {{ 'promoter.panel.suspendTitle' | translate }}
+              </button>
+            }
+            @if (ev.status === 'published' || ev.status === 'suspended') {
+              <button type="button" class="btn small danger" (click)="askCancelEvent(ev)" data-testid="ev-cancel" [title]="'promoter.panel.cancelTitle' | translate">
+                <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+              </button>
+            }
+          </div>
+        </article>
+      } @empty {
+        <p class="muted" data-testid="events-no-match">{{ 'promoter.panel.noMatch' | translate }}</p>
+      }
+    </div>
+
+    <app-pager [page]="page()" [totalPages]="totalPages()" (pageChange)="goToPage($event)" data-testid="panel-pager" />
+  }
+
+  @if (confirm.request(); as cf) {
+    <app-confirm-dialog
+      [title]="cf.title"
+      [message]="cf.message"
+      [confirmLabel]="cf.confirmLabel ?? ('common.delete' | translate)"
+      [confirmIcon]="cf.confirmIcon ?? 'delete'"
+      (accept)="confirm.accept()"
+      (cancelled)="confirm.cancel()"
+    />
+  }
+  <app-tour tourKey="promoter" [steps]="tourSteps" />
+</section>

@@ -1,0 +1,95 @@
+import { Component, computed, inject, input, effect, signal } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
+import { PromoterEventsApi } from '../../core/api/promoter-events.api';
+import { LoadingComponent } from '../ui/loading.component';
+import { EmptyStateComponent } from '../ui/empty-state.component';
+import type { EventSettlementDto } from '../../core/api/types';
+
+/**
+ * Cuentas (liquidación) de un evento sobre sus órdenes pagadas. El ADMIN ve el
+ * split completo (pasarela/plataforma/promotor + IVA); el PROMOTOR ve su neto y
+ * cuánto se descuenta por cuota de servicio. Server-authoritative (endpoint
+ * financiero); esta vista es solo presentación.
+ */
+@Component({
+  selector: 'app-event-settlement',
+  imports: [TranslatePipe, LoadingComponent, EmptyStateComponent],
+  templateUrl: './event-settlement.component.html',
+})
+export class EventSettlementComponent {
+  private readonly api = inject(PromoterEventsApi);
+
+  /** Id del evento a liquidar. */
+  readonly eventId = input.required<string>();
+  /** true = mostrar el split interno completo (vista admin). */
+  readonly showSplit = input(false);
+  /**
+   * Token de recarga (v3.11 · F1): cambiar su valor fuerza un re-fetch de la
+   * liquidación sin recrear el componente (p.ej. tras tramitar devoluciones, para
+   * reflejar `refundsIssued`). Default 0 = no recarga adicional.
+   */
+  readonly reloadToken = input(0);
+
+  protected readonly data = signal<EventSettlementDto | null>(null);
+  protected readonly loading = signal(true);
+  protected readonly error = signal(false);
+
+  protected readonly currency = computed(() => this.data()?.currency ?? 'GTQ');
+
+  /**
+   * Servicios (vista del promotor): todo lo que NO se lleva el promotor =
+   * comisión de plataforma + pasarela + cargos fijos + IVA. Se calcula como
+   * `gross − net` para que las tres líneas SIEMPRE reconcilien
+   * (Total recaudado − Servicios = Total del promotor), sin depender de un campo
+   * extra del DTO. Equivale a `serviceFee + iva`.
+   */
+  protected readonly services = computed(() => {
+    const d = this.data();
+    if (!d) return '0.00';
+    return (Number(d.gross) - Number(d.net)).toFixed(2);
+  });
+
+  /** Cargado sin órdenes pagadas → vista por defecto (aún no hay movimientos). */
+  protected readonly isEmpty = computed(() => {
+    const d = this.data();
+    return !this.loading() && !this.error() && !!d && d.paidOrders === 0;
+  });
+  /** Hay datos reales que mostrar (al menos una orden pagada). */
+  protected readonly hasData = computed(() => {
+    const d = this.data();
+    return !this.loading() && !this.error() && !!d && d.paidOrders > 0;
+  });
+
+  /** Último id ya solicitado (campo NO reactivo): evita re-fetch si el effect
+   *  se re-ejecuta por cambios de detección → un solo fetch por evento. */
+  private loadedId: string | null = null;
+  /** Último token de recarga aplicado (fuerza re-fetch al cambiar). */
+  private loadedToken = 0;
+
+  constructor() {
+    effect(() => {
+      const id = this.eventId();
+      const token = this.reloadToken();
+      if (id && (id !== this.loadedId || token !== this.loadedToken)) {
+        this.loadedId = id;
+        this.loadedToken = token;
+        this.load(id);
+      }
+    });
+  }
+
+  private load(id: string): void {
+    this.loading.set(true);
+    this.error.set(false);
+    this.api.settlement(id).subscribe({
+      next: (d) => {
+        this.data.set(d);
+        this.loading.set(false);
+      },
+      error: () => {
+        this.error.set(true);
+        this.loading.set(false);
+      },
+    });
+  }
+}

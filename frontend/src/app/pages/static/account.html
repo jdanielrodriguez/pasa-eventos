@@ -1,0 +1,790 @@
+<section class="account">
+  <h1>{{ 'account.title' | translate }}</h1>
+
+  <div class="account-grid">
+    <nav class="account-menu" [attr.aria-label]="'account.sectionsAria' | translate">
+      <button type="button" [class.active]="section() === 'perfil'" (click)="select('perfil')">{{ 'account.nav.profile' | translate }}</button>
+      <button type="button" [class.active]="section() === 'metodos'" (click)="select('metodos')" data-testid="menu-metodos">{{ 'account.nav.methods' | translate }}</button>
+      <button type="button" [class.active]="section() === 'facturacion'" (click)="select('facturacion')" data-testid="menu-facturacion">{{ 'account.nav.billing' | translate }}</button>
+      <button type="button" [class.active]="section() === 'wallet'" (click)="select('wallet')" data-testid="menu-wallet">{{ 'account.nav.wallet' | translate }}</button>
+      <button type="button" [class.active]="section() === 'activos'" (click)="select('activos')" data-testid="menu-activos">{{ 'account.nav.activeTickets' | translate }}</button>
+      <button type="button" [class.active]="section() === 'pasados'" (click)="select('pasados')" data-testid="menu-pasados">{{ 'account.nav.pastTickets' | translate }}</button>
+    </nav>
+
+    <div class="account-content">
+      @switch (section()) {
+        @case ('perfil') {
+          <h2>{{ 'account.nav.profile' | translate }}</h2>
+          <p class="muted account-email">{{ session.user()?.email }}</p>
+
+          <!-- Foto de perfil (opcional): subir → preview → guardar/cancelar; o quitar. -->
+          <div class="card-block">
+            <h3>{{ 'account.profile.photo' | translate }}</h3>
+            <div class="avatar-row" data-testid="avatar-section">
+              <div class="avatar-preview">
+                @if (pendingAvatarUrl(); as p) {
+                  <img [src]="p" [alt]="'account.profile.photo' | translate" data-testid="avatar-preview-img" />
+                } @else if (session.user()?.avatarUrl) {
+                  <img [src]="session.user()?.avatarUrl" [alt]="'account.profile.photo' | translate" data-testid="avatar-current" />
+                } @else {
+                  <span class="avatar-initials" aria-hidden="true">{{ avatarInitials() }}</span>
+                }
+              </div>
+              <div class="avatar-controls">
+                @if (pendingAvatarUrl()) {
+                  <p class="muted small">{{ 'account.profile.photoPreviewHint' | translate }}</p>
+                  <div class="avatar-actions">
+                    <button type="button" class="btn primary" [disabled]="uploadingAvatar()" (click)="saveAvatar()" data-testid="avatar-save">
+                      <app-icon name="save" /> {{ (uploadingAvatar() ? 'account.profile.saving' : 'common.save') | translate }}
+                    </button>
+                    <button type="button" class="btn" [disabled]="uploadingAvatar()" (click)="cancelAvatar()" data-testid="avatar-cancel">
+                      <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+                    </button>
+                  </div>
+                } @else {
+                  <div class="avatar-actions">
+                    <label class="btn" [class.disabled]="uploadingAvatar()">
+                      <app-icon name="add" /> {{ 'account.profile.photoChoose' | translate }}
+                      <input type="file" accept="image/*" hidden (change)="onAvatarFile($event)" data-testid="avatar-file" [disabled]="uploadingAvatar()" />
+                    </label>
+                    @if (session.user()?.avatarUrl) {
+                      <button type="button" class="btn danger icon-only" [disabled]="uploadingAvatar()" (click)="removeAvatar()" data-testid="avatar-remove"
+                        [attr.aria-label]="'common.delete' | translate" [title]="'account.profile.photoRemove' | translate">
+                        <app-icon name="delete" />
+                      </button>
+                    }
+                  </div>
+                  <p class="muted small">{{ 'account.profile.photoHint' | translate }}</p>
+                }
+              </div>
+            </div>
+          </div>
+
+          <div class="card-block">
+            <h3>{{ 'account.profile.yourData' | translate }}</h3>
+            <form class="stacked-form" (ngSubmit)="saveProfile()">
+              <div class="form-row">
+                <div class="field">
+                  <label for="pf-first">{{ 'common.name' | translate }}</label>
+                  <input id="pf-first" type="text" [ngModel]="firstName()" (ngModelChange)="firstName.set($event)" name="firstName" maxlength="100" autocomplete="given-name" />
+                </div>
+                <div class="field">
+                  <label for="pf-last">{{ 'account.profile.lastName' | translate }}</label>
+                  <input id="pf-last" type="text" [ngModel]="lastName()" (ngModelChange)="lastName.set($event)" name="lastName" maxlength="100" autocomplete="family-name" />
+                </div>
+              </div>
+              <div class="field">
+                <label for="pf-phone">{{ 'account.profile.phone' | translate }}</label>
+                <input id="pf-phone" type="tel" [ngModel]="phone()" (ngModelChange)="phone.set($event)" name="phone" maxlength="30" autocomplete="tel" />
+              </div>
+              <!-- Facturación (FEL): NIT necesario para facturar; DPI opcional. -->
+              <div class="field-row">
+                <div class="field">
+                  <label for="pf-nit">{{ 'account.profile.nit' | translate }}</label>
+                  <input id="pf-nit" type="text" [ngModel]="nit()" (ngModelChange)="nit.set($event)" name="nit" maxlength="20" data-testid="pf-nit" [placeholder]="'account.profile.nitPlaceholder' | translate" />
+                </div>
+                <div class="field">
+                  <label for="pf-dpi">{{ 'account.profile.dpi' | translate }}</label>
+                  <input id="pf-dpi" type="text" [ngModel]="dpi()" (ngModelChange)="dpi.set($event)" name="dpi" maxlength="20" data-testid="pf-dpi" [placeholder]="'account.profile.dpiPlaceholder' | translate" />
+                </div>
+              </div>
+              <div class="field">
+                <label for="pf-bname">{{ 'account.profile.billingName' | translate }}</label>
+                <input id="pf-bname" type="text" [ngModel]="billingName()" (ngModelChange)="billingName.set($event)" name="billingName" maxlength="150" data-testid="pf-bname" />
+              </div>
+              @if (nitMissing()) {
+                <p class="warn" data-testid="pf-nit-missing">{{ 'account.profile.nitMissing' | translate }}</p>
+              }
+              <button type="submit" class="primary" [disabled]="savingProfile()" data-testid="save-profile" [title]="'account.profile.saveChanges' | translate">
+                <app-icon name="save" /> {{ (savingProfile() ? 'account.profile.saving' : 'account.profile.saveChanges') | translate }}
+              </button>
+            </form>
+          </div>
+
+          <div class="card-block">
+            <h3>{{ 'account.language.title' | translate }}</h3>
+            <p class="muted">{{ 'account.language.hint' | translate }}</p>
+            <div class="lang-choice" role="group" [attr.aria-label]="'account.language.title' | translate" data-testid="account-lang-switcher">
+              <button type="button" class="lang-opt" [class.active]="profileLang() === 'es'" [attr.aria-pressed]="profileLang() === 'es'" [attr.aria-label]="'shell.langEs' | translate" (click)="setProfileLang('es')" data-testid="account-lang-es">
+                <!-- Bandera de Guatemala: celeste | blanco | celeste (SVG inline, igual que el lang-switcher del header) -->
+                <svg class="flag" viewBox="0 0 24 16" aria-hidden="true">
+                  <rect width="24" height="16" fill="#fff" />
+                  <rect width="8" height="16" fill="#4997d0" />
+                  <rect x="16" width="8" height="16" fill="#4997d0" />
+                </svg>
+                <span class="lang-code">{{ 'shell.langEsShort' | translate }}</span> {{ 'shell.langEs' | translate }}
+              </button>
+              <button type="button" class="lang-opt" [class.active]="profileLang() === 'en'" [attr.aria-pressed]="profileLang() === 'en'" [attr.aria-label]="'shell.langEn' | translate" (click)="setProfileLang('en')" data-testid="account-lang-en">
+                <!-- Bandera de EE. UU. (simplificada): franjas + cantón azul -->
+                <svg class="flag" viewBox="0 0 24 16" aria-hidden="true">
+                  <rect width="24" height="16" fill="#fff" />
+                  <g fill="#b22234">
+                    <rect width="24" height="1.6" y="0" />
+                    <rect width="24" height="1.6" y="3.2" />
+                    <rect width="24" height="1.6" y="6.4" />
+                    <rect width="24" height="1.6" y="9.6" />
+                    <rect width="24" height="1.6" y="12.8" />
+                  </g>
+                  <rect width="11" height="8.8" fill="#3c3b6e" />
+                </svg>
+                <span class="lang-code">{{ 'shell.langEnShort' | translate }}</span> {{ 'shell.langEn' | translate }}
+              </button>
+            </div>
+            @if (languageDirty()) {
+              <button type="button" class="primary lang-save" [disabled]="savingLanguage()" (click)="saveLanguage()" data-testid="save-language">
+                <app-icon name="save" /> {{ (savingLanguage() ? 'account.profile.saving' : 'common.save') | translate }}
+              </button>
+            }
+          </div>
+
+          <div class="card-block">
+            <h3>{{ 'account.password.title' | translate }}</h3>
+            <p class="muted">{{ 'account.password.hint' | translate }}</p>
+            <form class="stacked-form" (ngSubmit)="changePassword()">
+              <div class="field">
+                <label for="pw-current">{{ 'account.password.current' | translate }}</label>
+                <input id="pw-current" type="password" [ngModel]="currentPassword()" (ngModelChange)="currentPassword.set($event)" name="currentPassword" autocomplete="current-password" data-testid="pw-current" />
+              </div>
+              <div class="form-row">
+                <div class="field">
+                  <label for="pw-new">{{ 'account.password.new' | translate }}</label>
+                  <input id="pw-new" type="password" [ngModel]="newPassword()" (ngModelChange)="newPassword.set($event)" name="newPassword" autocomplete="new-password" minlength="8" data-testid="pw-new" />
+                </div>
+                <div class="field">
+                  <label for="pw-confirm">{{ 'account.password.confirm' | translate }}</label>
+                  <input id="pw-confirm" type="password" [ngModel]="confirmPassword()" (ngModelChange)="confirmPassword.set($event)" name="confirmPassword" autocomplete="new-password" minlength="8" data-testid="pw-confirm" />
+                </div>
+              </div>
+              <button type="submit" class="primary" [disabled]="changingPassword()" data-testid="change-password" [title]="'account.password.title' | translate">
+                <app-icon name="save" /> {{ (changingPassword() ? 'account.password.changing' : 'account.password.title') | translate }}
+              </button>
+            </form>
+          </div>
+
+          <!-- Segundo factor (2FA): correo (default) o app autenticadora (TOTP). -->
+          <div class="card-block" data-testid="twofa-block">
+            <h3>{{ 'account.twofa.title' | translate }}</h3>
+            <p class="muted">{{ 'account.twofa.hint' | translate }}</p>
+            <p class="twofa-current" data-testid="twofa-current">
+              {{ 'account.twofa.current' | translate }}:
+              <strong>{{ (twoFactorMethod() === 'totp' ? 'account.twofa.methodTotp' : 'account.twofa.methodEmail') | translate }}</strong>
+            </p>
+
+            @if (totpStep() === 'idle') {
+              @if (twoFactorMethod() !== 'totp') {
+                <button type="button" class="primary" [disabled]="totpBusy()" (click)="startTotp()" data-testid="twofa-start-totp">
+                  <app-icon name="unlock" /> {{ 'account.twofa.useApp' | translate }}
+                </button>
+              } @else {
+                <button type="button" class="btn" [disabled]="totpBusy()" (click)="useEmail2fa()" data-testid="twofa-use-email">
+                  {{ 'account.twofa.useEmail' | translate }}
+                </button>
+              }
+            } @else {
+              <!-- Paso de alta: escanea el QR y confirma con un código de la app. -->
+              <div class="twofa-setup" data-testid="twofa-setup">
+                <p class="muted small">{{ 'account.twofa.scan' | translate }}</p>
+                @if (totpQr()) { <img [src]="totpQr()" alt="QR TOTP" class="twofa-qr" data-testid="twofa-qr" /> }
+                <p class="muted small">{{ 'account.twofa.orSecret' | translate }}: <code data-testid="twofa-secret">{{ totpSecret() }}</code></p>
+                <div class="field">
+                  <label for="totp-code">{{ 'account.twofa.code' | translate }}</label>
+                  <input id="totp-code" type="text" inputmode="numeric" maxlength="6" [ngModel]="totpCode()" (ngModelChange)="totpCode.set($event)" name="totpcode" data-testid="twofa-code" autocomplete="one-time-code" />
+                </div>
+                <div class="actions">
+                  <button type="button" class="primary" [disabled]="totpBusy() || totpCode().trim().length < 6" (click)="confirmTotp()" data-testid="twofa-confirm">
+                    {{ (totpBusy() ? 'account.twofa.activating' : 'account.twofa.activate') | translate }}
+                  </button>
+                  <button type="button" class="btn ghost" [disabled]="totpBusy()" (click)="cancelTotp()" data-testid="twofa-cancel">{{ 'common.cancel' | translate }}</button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        @case ('metodos') {
+          <h2>{{ 'account.nav.methods' | translate }}</h2>
+          <p class="info-banner" data-testid="metodos-info">
+            <span class="info-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="10" width="16" height="10" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke-linecap="round" />
+              </svg>
+            </span>
+            {{ 'account.methods.infoLead' | translate }}
+            <a routerLink="/terminos">{{ 'account.methods.securityDetails' | translate }}</a>.
+          </p>
+
+          @if (cards().length > 0) {
+            <ul class="card-methods" data-testid="cards-list">
+              @for (c of cards(); track c.id) {
+                <li class="method-card">
+                  <span class="method-brand">{{ c.brand | uppercase }}</span>
+                  <span class="method-dots">•••• {{ c.last4 }}</span>
+                  @if (c.isDefault) {
+                    <span class="badge badge-approved">{{ 'account.methods.default' | translate }}</span>
+                  } @else {
+                    <button type="button" class="link-btn" (click)="setDefaultCard(c.id)" data-testid="set-default-card">{{ 'account.methods.makeDefault' | translate }}</button>
+                  }
+                  <button type="button" class="link-btn danger" (click)="askRemoveCard(c)" data-testid="remove-card" [attr.aria-label]="'common.delete' | translate" [title]="'account.methods.removeCardTitle' | translate"><app-icon name="delete" /></button>
+                </li>
+              }
+            </ul>
+          } @else {
+            <app-empty-state
+              variant="card"
+              data-testid="cards-empty"
+              [title]="'account.methods.emptyTitle' | translate"
+              [subtitle]="'account.methods.emptySubtitle' | translate"
+            />
+          }
+
+          @if (!showCardForm()) {
+            <button type="button" class="primary" (click)="showCardForm.set(true)" data-testid="add-method" [title]="'account.methods.addCard' | translate">
+              <app-icon name="add" /> {{ 'account.methods.addCard' | translate }}
+            </button>
+          } @else {
+            <div class="card-block">
+              <h3>{{ 'account.methods.newCard' | translate }}</h3>
+              <form class="stacked-form" (ngSubmit)="addCard()">
+                <div class="field">
+                  <label for="card-number">{{ 'account.methods.cardNumber' | translate }}</label>
+                  <input id="card-number" type="text" inputmode="numeric" autocomplete="cc-number" placeholder="4242 4242 4242 4242" [attr.maxlength]="cardNumberDisplayMaxLen()" [ngModel]="cardNumberDisplay()" (ngModelChange)="onCardNumberInput($event)" name="ccnumber" data-testid="card-number" [attr.aria-invalid]="cardNumber().length > 0 && !cardNumberValid()" />
+                  @if (cardNumber().length > 0) {
+                    @if (cardBrandRecognized()) {
+                      <span class="card-brand-badge" data-testid="card-brand">{{ ('account.methods.brand.' + cardBrand()) | translate }}</span>
+                    } @else {
+                      <span class="field-error" data-testid="card-brand-invalid">{{ 'account.methods.brandUnknown' | translate }}</span>
+                    }
+                  }
+                </div>
+                <div class="form-row">
+                  <div class="field">
+                    <label for="card-exp-m">{{ 'account.methods.monthMM' | translate }}</label>
+                    <input id="card-exp-m" type="text" inputmode="numeric" maxlength="2" placeholder="12" [ngModel]="cardExpMonth()" (ngModelChange)="onCardExpMonthInput($event)" name="ccexpm" data-testid="card-exp-m" [attr.aria-invalid]="cardExpMonth().length > 0 && !expMonthValid()" />
+                    @if (cardExpMonth().length > 0 && !expMonthValid()) {
+                      <span class="field-error" data-testid="card-exp-m-error">{{ 'account.methods.monthInvalid' | translate }}</span>
+                    }
+                  </div>
+                  <div class="field">
+                    <label for="card-exp-y">{{ 'account.methods.yearYY' | translate }}</label>
+                    <input #expYearInput id="card-exp-y" type="text" inputmode="numeric" maxlength="2" placeholder="28" [ngModel]="cardExpYear()" (ngModelChange)="onCardExpYearInput($event)" name="ccexpy" data-testid="card-exp-y" [attr.aria-invalid]="cardExpYear().length > 0 && !expYearValid()" />
+                    @if (cardExpYear().length > 0 && !expYearValid()) {
+                      <span class="field-error" data-testid="card-exp-y-error">{{ 'account.methods.yearInvalid' | translate }}</span>
+                    }
+                  </div>
+                  <div class="field">
+                    <label for="card-cvc">{{ 'account.methods.cvc' | translate }}</label>
+                    <input id="card-cvc" type="text" inputmode="numeric" [attr.maxlength]="cvcMaxLen()" placeholder="123" [ngModel]="cardCvc()" (ngModelChange)="onCardCvcInput($event)" name="cccvc" data-testid="card-cvc" />
+                  </div>
+                </div>
+                <div class="ticket-actions">
+                  <button type="submit" class="primary" [disabled]="savingCard() || !cardFormValid()" data-testid="save-card" [title]="'account.methods.saveCard' | translate">
+                    <app-icon name="save" /> {{ (savingCard() ? 'account.methods.savingCard' : 'account.methods.saveCard') | translate }}
+                  </button>
+                  <button type="button" (click)="showCardForm.set(false)" [title]="'common.cancel' | translate">
+                    <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          }
+        }
+
+        @case ('facturacion') {
+          <h2>{{ 'account.nav.billing' | translate }}</h2>
+
+          @if (orderFilter(); as of) {
+            <p class="filter-pill" data-testid="order-filter-pill">
+              {{ 'account.billing.filterPill' | translate }}
+              <button type="button" class="link-btn" (click)="clearOrderFilter()" data-testid="clear-order-filter">{{ 'account.billing.viewAll' | translate }}</button>
+            </p>
+          } @else if (movements().length > 0) {
+            <div class="filters" data-testid="billing-filters">
+              <div class="field field-dir">
+                <label>{{ 'account.billing.movementType' | translate }}</label>
+                <div class="seg" role="group" [attr.aria-label]="'account.billing.movementType' | translate" data-testid="filter-dir">
+                  <button type="button" [class.active]="movementDir() === ''" (click)="setMovementDir('')" data-testid="dir-all">{{ 'common.all' | translate }}</button>
+                  @if (showIncomeFilter()) {
+                    <button type="button" [class.active]="movementDir() === 'income'" (click)="setMovementDir('income')" data-testid="dir-income">{{ 'account.billing.income' | translate }}</button>
+                  }
+                  <button type="button" [class.active]="movementDir() === 'expense'" (click)="setMovementDir('expense')" data-testid="dir-expense">{{ 'account.billing.expense' | translate }}</button>
+                </div>
+              </div>
+              @if (movementStatuses().length > 0) {
+                <div class="field">
+                  <label for="f-status">{{ 'account.billing.statusFilter' | translate }}</label>
+                  <select id="f-status" [ngModel]="movementStatus()" (ngModelChange)="setMovementStatus($event)" name="fstatus" data-testid="filter-status">
+                    <option value="">{{ 'common.statuses.all' | translate }}</option>
+                    @for (st of movementStatuses(); track st) {
+                      <option [value]="st">{{ st | statusLabel }}</option>
+                    }
+                  </select>
+                </div>
+              }
+              <div class="field">
+                <label for="f-event">{{ 'account.billing.event' | translate }}</label>
+                <input id="f-event" type="text" [ngModel]="filterEvent()" (ngModelChange)="setFilterEvent($event)" name="fevent" [attr.placeholder]="'account.billing.searchEvent' | translate" data-testid="filter-event" />
+              </div>
+              <div class="field">
+                <label for="f-date">{{ 'common.date' | translate }}</label>
+                <input id="f-date" type="date" [ngModel]="filterDate()" (ngModelChange)="setFilterDate($event)" name="fdate" data-testid="filter-date" />
+              </div>
+            </div>
+          }
+
+          @if (movements().length === 0) {
+            <app-empty-state
+              variant="billing"
+              [skeleton]="true"
+              data-testid="orders-empty"
+              [title]="'account.billing.emptyTitle' | translate"
+              [subtitle]="'account.billing.emptySubtitle' | translate"
+              [ctaLabel]="'account.billing.exploreEvents' | translate"
+              ctaLink="/"
+            />
+          } @else if (filteredMovements().length === 0) {
+            <app-empty-state
+              variant="billing"
+              data-testid="orders-filtered-empty"
+              [title]="'account.billing.filteredEmptyTitle' | translate"
+              [subtitle]="'account.billing.filteredEmpty' | translate"
+            />
+          } @else {
+            <div class="invoice-list" data-testid="orders-list">
+              @for (m of pageMovements(); track m.id) {
+                <article class="invoice-card" [class.is-income]="m.direction === 'income'" [class.is-settlement]="m.kind === 'event_settlement'">
+                  <header class="invoice-head">
+                    <div>
+                      @if (m.kind === 'event_settlement') {
+                        <h3 data-testid="settlement-title">{{ 'account.billing.settlement.title' | translate: { event: m.eventName ?? ('account.billing.movement' | translate) } }}</h3>
+                      } @else {
+                        <h3>{{ m.eventName ?? ('account.billing.movement' | translate) }}</h3>
+                      }
+                      <span class="muted">{{ m.createdAt | localizedDate: 'dd/MM/yyyy HH:mm' }}</span>
+                    </div>
+                    <div class="invoice-head-right">
+                      @if (m.kind === 'event_settlement') {
+                        <span class="badge badge-settlement" data-testid="settlement-badge">{{ 'account.billing.settlement.label' | translate }}</span>
+                      }
+                      <span class="badge" [class.badge-income]="m.direction === 'income'" [class.badge-expense]="m.direction === 'expense'" data-testid="movement-dir">
+                        {{ (m.direction === 'income' ? 'account.billing.income' : 'account.billing.expense') | translate }}
+                      </span>
+                      <span class="invoice-total" [class.income]="m.direction === 'income'">
+                        {{ m.direction === 'income' ? '+' : '−' }}{{ m.amount | money }}
+                      </span>
+                    </div>
+                  </header>
+
+                  <div class="invoice-meta">
+                    <span class="muted movement-kind">{{ ('account.billing.kind.' + m.kind) | translate }}</span>
+                    @if (m.status) {
+                      <span class="badge badge-{{ m.status }}" data-testid="movement-status">{{ m.status | statusLabel }}</span>
+                    }
+                    @if (m.kind === 'event_settlement' && m.eventId) {
+                      <button type="button" class="link-btn" (click)="downloadSettlement(m.eventId)" [disabled]="downloadingSettlement() === m.eventId" data-testid="settlement-download">
+                        {{ (downloadingSettlement() === m.eventId ? 'account.billing.settlement.downloading' : 'account.billing.settlement.download') | translate }}
+                      </button>
+                      <button type="button" class="link-btn" (click)="toggleTxnDetail(m)" data-testid="settlement-view-transaction">
+                        {{ (expandedTxn() === m.id ? 'account.billing.settlement.hideTransaction' : 'account.billing.settlement.viewTransaction') | translate }}
+                      </button>
+                      <button type="button" class="link-btn" (click)="verEventAccounts(m.eventId)" data-testid="settlement-view-accounts">
+                        {{ 'account.billing.settlement.viewAccounts' | translate }}
+                      </button>
+                      <button type="button" class="link-btn" (click)="loadChain(chainKey(m), m.eventId, 'event')" data-testid="toggle-chain">
+                        {{ (chains()[chainKey(m)] ? 'account.billing.hideChain' : 'account.billing.showChain') | translate }}
+                      </button>
+                    } @else if (m.orderId) {
+                      <button type="button" class="link-btn" (click)="verCompra(m.orderId)" data-testid="ver-detalle">
+                        {{ 'account.billing.viewFullDetail' | translate }}
+                      </button>
+                      <button type="button" class="link-btn" (click)="loadChain(m.orderId)" data-testid="toggle-chain">
+                        {{ (chains()[chainKey(m)] ? 'account.billing.hideChain' : 'account.billing.showChain') | translate }}
+                      </button>
+                    }
+                  </div>
+
+                  <!-- Detalle inline de la transacción (liquidaciones): "Ver transacción"
+                       muestra el detalle de LA transacción individual, distinto de
+                       "Ver detalle de cuentas del evento" (que navega al panel del evento). -->
+                  @if (m.kind === 'event_settlement' && expandedTxn() === m.id) {
+                    <dl class="txn-detail" data-testid="settlement-detail">
+                      <div><dt>{{ 'account.billing.event' | translate }}</dt><dd>{{ m.eventName ?? ('account.billing.movement' | translate) }}</dd></div>
+                      <div><dt>{{ 'account.billing.movementType' | translate }}</dt><dd>{{ ('account.billing.kind.' + m.kind) | translate }}</dd></div>
+                      <div><dt>{{ 'common.date' | translate }}</dt><dd>{{ m.createdAt | localizedDate: 'dd/MM/yyyy HH:mm' }}</dd></div>
+                      @if (m.status) {
+                        <div><dt>{{ 'account.billing.statusFilter' | translate }}</dt><dd><span class="badge badge-{{ m.status }}">{{ m.status | statusLabel }}</span></dd></div>
+                      }
+                      <div><dt>{{ 'account.billing.settlement.amount' | translate }}</dt><dd class="txn-detail-amount">{{ m.amount | money }} {{ m.currency }}</dd></div>
+                    </dl>
+                  }
+
+                  @if (loadingChain() === chainKey(m)) {
+                    <p class="muted">{{ 'account.chain.loading' | translate }}</p>
+                  }
+                  @if (chains()[chainKey(m)]; as chain) {
+                    <div class="chain" data-testid="ledger-chain">
+                      <p class="chain-status" [class.ok]="chain.chainValid" [class.bad]="!chain.chainValid">
+                        {{ (chain.chainValid ? 'account.chain.valid' : 'account.chain.invalid') | translate }}
+                      </p>
+                      <ol class="chain-list">
+                        @for (tx of chain.transactions; track tx.seq) {
+                          <li class="chain-node" [class.verified]="tx.verified">
+                            <span class="chain-seq">#{{ tx.seq }}</span>
+                            <span class="chain-kind">{{ tx.kind }}</span>
+                            <span class="chain-hash" [title]="tx.hash">{{ tx.hash.slice(0, 12) }}…</span>
+                            <span class="chain-check">{{ tx.verified ? '✓' : '✗' }}</span>
+                          </li>
+                        }
+                      </ol>
+                      <p class="muted chain-note">
+                        {{ 'account.chain.note' | translate }}
+                      </p>
+                    </div>
+                  }
+                </article>
+              }
+            </div>
+            <app-pager [page]="billingPage()" [totalPages]="billingTotalPages()" (pageChange)="goToBillingPage($event)" data-testid="billing-pager" />
+          }
+        }
+
+        @case ('wallet') {
+          <h2>{{ 'account.nav.wallet' | translate }}</h2>
+
+          <div class="wallet-hero">
+            <span class="wallet-hero-label">
+              {{ 'account.wallet.available' | translate }}
+              <button
+                type="button"
+                class="info-dot"
+                data-testid="wallet-source-tip"
+                (click)="openWalletInfo()"
+                [attr.aria-label]="'account.wallet.sourceTipAria' | translate"
+                [title]="'account.wallet.sourceTipTitle' | translate"
+              >i</button>
+            </span>
+            @if (wallet(); as w) {
+              <span class="wallet-hero-amount" data-testid="wallet-balance">{{ w.balance | money }}</span>
+              <span class="wallet-hero-currency">{{ w.currency }}</span>
+            } @else {
+              <span class="muted">{{ 'account.wallet.balanceError' | translate }}</span>
+            }
+          </div>
+
+          <p class="muted wallet-source" data-testid="wallet-source" [innerHTML]="'account.wallet.source' | translate"></p>
+
+          <!-- Primero la mini-facturación de movimientos -->
+          <div class="card-block">
+            <h3>{{ 'account.wallet.recentMovements' | translate }}</h3>
+            @if (orders().length > 0) {
+              <ul class="order-list mini" data-testid="wallet-orders">
+                @for (o of orders().slice(0, 5); track o.id) {
+                  <li>
+                    <span>{{ o.createdAt | localizedDate: 'dd/MM/yyyy' }}</span>
+                    <span class="badge badge-{{ o.status }}">{{ o.status }}</span>
+                    <span>{{ o.total | money }}</span>
+                    <button type="button" class="link-btn" (click)="verCompra(o.id)" data-testid="wallet-ver-transaccion">{{ 'account.wallet.viewTransaction' | translate }}</button>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <app-empty-state
+                variant="billing"
+                data-testid="wallet-orders-empty"
+                [title]="'account.wallet.noOrdersTitle' | translate"
+                [subtitle]="'account.wallet.noOrdersSubtitle' | translate"
+                [ctaLabel]="'account.billing.exploreEvents' | translate"
+                ctaLink="/"
+              />
+            }
+          </div>
+
+          <!-- Retiros: solo para roles vendedores (promotor/admin); el cliente no los ve -->
+          @if (isSellerRole()) {
+          <!-- Luego la tabla de retiros con filtros -->
+          <div class="card-block">
+            <h3>{{ 'account.wallet.myWithdrawals' | translate }}</h3>
+            @if (withdrawals().length > 0) {
+              <div class="filters" data-testid="withdrawal-filters">
+                <div class="field">
+                  <label for="wd-f-status">{{ 'common.status' | translate }}</label>
+                  <select id="wd-f-status" [ngModel]="wdFilterStatus()" (ngModelChange)="wdFilterStatus.set($event)" name="wdfstatus" data-testid="wd-filter-status">
+                    <option value="">{{ 'common.all' | translate }}</option>
+                    @for (s of withdrawalStatuses(); track s) {
+                      <option [value]="s">{{ s }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="wd-f-date">{{ 'common.date' | translate }}</label>
+                  <input id="wd-f-date" type="date" [ngModel]="wdFilterDate()" (ngModelChange)="wdFilterDate.set($event)" name="wdfdate" data-testid="wd-filter-date" />
+                </div>
+              </div>
+              @if (filteredWithdrawals().length > 0) {
+                <ul class="withdrawal-list" data-testid="withdrawals-list">
+                  @for (w of filteredWithdrawals(); track w.id) {
+                    <li>
+                      <span>{{ w.amount | money }}</span>
+                      <span class="muted">{{ 'account.wallet.net' | translate }} {{ w.net | money }}</span>
+                      <span class="badge badge-{{ w.status }}">{{ w.status }}</span>
+                      @if (w.status === 'pending') {
+                        <button type="button" (click)="askCancelWithdrawal(w)" data-testid="cancel-withdrawal" [title]="'account.wallet.cancelWithdrawalTitle' | translate">
+                          <app-icon name="cancel" /> {{ 'common.cancel' | translate }}
+                        </button>
+                      }
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p class="muted" data-testid="withdrawals-filtered-empty">{{ 'account.wallet.withdrawalsFilteredEmpty' | translate }}</p>
+              }
+            } @else {
+              <app-empty-state
+                variant="wallet"
+                data-testid="withdrawals-empty"
+                [title]="'account.wallet.noWithdrawalsTitle' | translate"
+                [subtitle]="'account.wallet.noWithdrawalsSubtitle' | translate"
+              />
+            }
+          </div>
+
+          <!-- Al final, el formulario de solicitar retiro -->
+          <div class="card-block">
+            <h3>{{ 'account.wallet.requestWithdrawal' | translate }}</h3>
+            <form class="stacked-form withdraw-form" (ngSubmit)="requestWithdrawal()">
+              <div class="field">
+                <label for="wd-amount">{{ 'account.wallet.amountToWithdraw' | translate }}</label>
+                <input id="wd-amount" type="number" min="1" step="0.01" [ngModel]="withdrawAmount()" (ngModelChange)="withdrawAmount.set($event)" name="amount" data-testid="withdraw-amount" />
+              </div>
+              @if (withdrawNetPreview(); as net) {
+                <p class="withdraw-preview" data-testid="withdraw-preview">
+                  {{ 'account.wallet.previewLead' | translate: { pct: withdrawFeePct() * 100 } }}
+                  <strong>{{ net | money }}</strong>.
+                  <span [innerHTML]="'account.wallet.previewTail' | translate"></span>
+                </p>
+              }
+              <button type="submit" class="primary" [disabled]="withdrawing()" data-testid="request-withdrawal" [title]="'account.wallet.requestWithdrawal' | translate">
+                <app-icon name="save" /> {{ (withdrawing() ? 'account.wallet.requesting' : 'account.wallet.requestWithdrawal') | translate }}
+              </button>
+            </form>
+          </div>
+          }
+        }
+
+        @case ('activos') {
+          <h2>{{ 'account.nav.activeTickets' | translate }}</h2>
+          @if (orderFilter()) {
+            <p class="filter-pill" data-testid="tickets-order-pill">
+              {{ 'account.tickets.orderFilterPill' | translate }}
+              <button type="button" class="link-btn" (click)="clearOrderFilter()" data-testid="clear-tickets-order-filter">{{ 'account.tickets.viewAllTickets' | translate }}</button>
+            </p>
+          }
+          @if (activosGrouped().length > 0) {
+            <div class="ticket-groups" data-testid="tickets-activos">
+              @for (eg of pageEvents('activos'); track eg.eventId) {
+                <article class="event-card">
+                  <header class="event-card-head">
+                    <div>
+                      <h3>{{ eg.eventName }}</h3>
+                      @if (eg.startsAt) {
+                        <span class="muted">{{ eg.startsAt | localizedDate: 'EEEE d MMM y, HH:mm' }}</span>
+                      }
+                    </div>
+                    <span class="muted event-purchase-count">{{ 'account.tickets.purchaseCount' | translate: { n: eg.orders.length } }}</span>
+                  </header>
+                  @for (og of pageOrdersOf('activos', eg); track og.orderId) {
+                    <div class="order-block">
+                      <div class="order-block-head">
+                        <h4 class="order-title">{{ 'account.tickets.purchase' | translate }} <span class="muted">· {{ 'account.billing.ticketsCount' | translate: { n: og.tickets.length } }}</span></h4>
+                        <button type="button" class="link-btn" (click)="verCompra(og.orderId)" data-testid="ver-compra">
+                          {{ 'account.tickets.viewPurchase' | translate }}
+                        </button>
+                      </div>
+                      <div class="poster-cards">
+                        @for (t of og.tickets; track t.id) {
+                          <div
+                            class="poster-ticket"
+                            [class.no-banner]="!eg.bannerUrl"
+                            [style.background-image]="eg.bannerUrl ? 'url(' + eg.bannerUrl + ')' : null"
+                          >
+                            <div class="poster-overlay"></div>
+                            <span class="poster-serial" aria-hidden="true">{{ t.serial }}</span>
+
+                            <div class="poster-body">
+                              <span class="poster-chip" data-testid="poster-live">
+                                <span class="live-dot" aria-hidden="true"></span> {{ 'account.tickets.valid' | translate }}
+                              </span>
+                              <span class="poster-title">
+                                {{ t.localityName ?? ('account.general' | translate) }}@if (t.seatLabel) { · {{ t.seatLabel }}}
+                              </span>
+                              <span class="poster-subtitle">{{ eg.eventName }}</span>
+                              @if (eg.startsAt) {
+                                <span class="poster-date">{{ eg.startsAt | localizedDate: 'd MMM y, HH:mm' }}</span>
+                              }
+
+                              @if (qrVisible(t.id)) {
+                                @if (media()[t.id]; as m) {
+                                  <div class="poster-qr">
+                                    <img [src]="m.qrUrl" alt="Código QR del boleto para validar en la puerta" width="160" height="160" (error)="onQrError(t.id)" />
+                                  </div>
+                                } @else {
+                                  <p class="muted qr-pending" data-testid="qr-pending">{{ 'account.tickets.qrPending' | translate }}</p>
+                                }
+                              }
+
+                              <div class="poster-actions">
+                                <button
+                                  type="button"
+                                  class="icon-btn"
+                                  (click)="toggleQr(t.id)"
+                                  data-testid="ticket-media"
+                                  [attr.aria-label]="(qrVisible(t.id) ? 'account.tickets.hideQr' : 'account.tickets.showQr') | translate"
+                                  [attr.title]="(qrVisible(t.id) ? 'account.tickets.hideQr' : 'account.tickets.showQr') | translate"
+                                >
+                                  @if (qrVisible(t.id)) {
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12s3.5-7 9-7 9 7 9 7-3.5 7-9 7-9-7-9-7z"/><path d="M4 4l16 16" stroke-linecap="round"/></svg>
+                                  } @else {
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12s3.5-7 9-7 9 7 9 7-3.5 7-9 7-9-7-9-7z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                                  }
+                                </button>
+                                @if (media()[t.id]; as m) {
+                                  <a
+                                    class="icon-btn"
+                                    [href]="m.pdfUrl"
+                                    target="_blank"
+                                    rel="noopener"
+                                    data-testid="ticket-pdf"
+                                    [attr.aria-label]="'account.tickets.downloadPdfAria' | translate"
+                                    [title]="'account.tickets.downloadPdf' | translate"
+                                  >
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12" stroke-linecap="round"/><path d="M7 11l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke-linecap="round"/></svg>
+                                  </a>
+                                }
+                                <button
+                                  type="button"
+                                  class="icon-btn"
+                                  (click)="openTransfer(t)"
+                                  data-testid="ticket-transfer"
+                                  [attr.aria-label]="'account.tickets.shareTicketAria' | translate"
+                                  [title]="'account.tickets.share' | translate"
+                                >
+                                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.7l6.8-4M8.6 13.3l6.8 4" stroke-linecap="round"/></svg>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+                  @if (orderTotalPages(eg) > 1) {
+                    <div class="order-pager-wrap">
+                      <app-pager [page]="orderPageOf('activos', eg.eventId)" [totalPages]="orderTotalPages(eg)" (pageChange)="goToOrderPage('activos', eg.eventId, $event)" [label]="'account.tickets.purchasesPager' | translate" />
+                    </div>
+                  }
+                </article>
+              }
+            </div>
+            <app-pager [page]="activosPage()" [totalPages]="activosTotalPages()" (pageChange)="goToActivosPage($event)" data-testid="activos-pager" />
+          } @else {
+            <app-empty-state
+              variant="tickets"
+              [skeleton]="true"
+              data-testid="activos-empty"
+              [title]="'account.tickets.noActiveTitle' | translate"
+              [subtitle]="'account.tickets.noActiveSubtitle' | translate"
+              [ctaLabel]="'account.billing.exploreEvents' | translate"
+              ctaLink="/"
+            />
+          }
+        }
+
+        @case ('pasados') {
+          <h2>{{ 'account.nav.pastTickets' | translate }}</h2>
+          @if (pasados().length > 0) {
+            <div class="ticket-groups" data-testid="tickets-pasados">
+              @for (eg of pageEvents('pasados'); track eg.eventId) {
+                <article class="event-card is-past">
+                  <header class="event-card-head">
+                    <div>
+                      <h3>{{ eg.eventName }}</h3>
+                      @if (eg.startsAt) {
+                        <span class="muted">{{ eg.startsAt | localizedDate: 'd MMM y' }}</span>
+                      }
+                    </div>
+                    <span class="muted event-purchase-count">{{ 'account.tickets.purchaseCount' | translate: { n: eg.orders.length } }}</span>
+                  </header>
+                  @for (og of pageOrdersOf('pasados', eg); track og.orderId) {
+                    <div class="order-block">
+                      <div class="order-block-head">
+                        <h4 class="order-title">{{ 'account.tickets.purchase' | translate }} <span class="muted">· {{ 'account.billing.ticketsCount' | translate: { n: og.tickets.length } }}</span></h4>
+                        <button type="button" class="link-btn" (click)="verCompra(og.orderId)">{{ 'account.tickets.viewPurchase' | translate }}</button>
+                      </div>
+                      <ul class="ticket-list">
+                        @for (t of og.tickets; track t.id) {
+                          <li>
+                            <span>{{ t.serial }}</span>
+                            <span class="muted">{{ t.localityName ?? ('account.general' | translate) }}@if (t.seatLabel) { · {{ 'account.tickets.seat' | translate }} {{ t.seatLabel }}}</span>
+                            @if (t.amount) { <span class="ticket-amount">Q{{ t.amount }}</span> }
+                          </li>
+                        }
+                      </ul>
+                    </div>
+                  }
+                  @if (orderTotalPages(eg) > 1) {
+                    <div class="order-pager-wrap">
+                      <app-pager [page]="orderPageOf('pasados', eg.eventId)" [totalPages]="orderTotalPages(eg)" (pageChange)="goToOrderPage('pasados', eg.eventId, $event)" [label]="'account.tickets.purchasesPager' | translate" />
+                    </div>
+                  }
+                </article>
+              }
+            </div>
+            <app-pager [page]="pasadosPage()" [totalPages]="eventTotalPages('pasados')" (pageChange)="goToEventPage('pasados', $event)" data-testid="pasados-pager" />
+          } @else {
+            <app-empty-state
+              variant="tickets"
+              data-testid="pasados-empty"
+              [title]="'account.tickets.noPastTitle' | translate"
+              [subtitle]="'account.tickets.noPastSubtitle' | translate"
+            />
+          }
+        }
+      }
+    </div>
+  </div>
+
+  @if (showWalletInfo()) {
+    <div class="modal-backdrop" data-testid="wallet-info-modal" (click)="closeWalletInfo()">
+      <div class="modal-card" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+        <h3>{{ 'account.wallet.infoTitle' | translate }}</h3>
+        <p>{{ (isSellerRole() ? 'account.wallet.infoSellerBody' : 'account.wallet.infoClientBody') | translate }}</p>
+        <div class="ev-card-actions">
+          <button type="button" class="btn primary" (click)="closeWalletInfo()" data-testid="wallet-info-close" [title]="'common.close' | translate">
+            <app-icon name="cancel" /> {{ 'common.close' | translate }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (transferTicket(); as tt) {
+    <app-ticket-transfer-modal
+      [ticketId]="tt.id"
+      [serial]="tt.serial"
+      (closed)="closeTransfer()"
+    />
+  }
+
+  @if (confirm.request(); as cf) {
+    <app-confirm-dialog
+      [title]="cf.title"
+      [message]="cf.message"
+      [confirmLabel]="cf.confirmLabel ?? ('common.delete' | translate)"
+      [confirmIcon]="cf.confirmIcon ?? 'delete'"
+      [danger]="cf.danger ?? true"
+      [titleIcon]="cf.titleIcon"
+      (accept)="confirm.accept()"
+      (cancelled)="confirm.cancel()"
+    />
+  }
+</section>

@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { SpanStatusCode } from '@opentelemetry/api';
 import Decimal from 'decimal.js';
@@ -41,12 +42,17 @@ interface LockedSeat {
 export class CheckoutService {
   private readonly logger = new Logger(CheckoutService.name);
 
+  private readonly maxPendingPerBuyer: number;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly pricing: PricingService,
     private readonly stream: StreamService,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.maxPendingPerBuyer = config.get<number>('orders.maxPendingPerBuyer') ?? 5;
+  }
 
   private holdKey(eventId: string, seatId: string): string {
     return `hold:${eventId}:${seatId}`;
@@ -68,12 +74,18 @@ export class CheckoutService {
    * negocio) para trazar el camino crítico. Los spans de Prisma/Redis/HTTP cuelgan
    * de este cuando OTel está habilitado; es no-op si está desactivado.
    */
-  async commit(eventId: string, rawSeatIds: string[], buyerId: string, billing?: BillingInput) {
+  async commit(
+    eventId: string,
+    rawSeatIds: string[],
+    buyerId: string,
+    billing?: BillingInput,
+    holderId?: string,
+  ) {
     return checkoutTracer().startActiveSpan('checkout.commit', async (span) => {
       span.setAttribute('event.id', eventId);
       span.setAttribute('seat.count', new Set(rawSeatIds).size);
       try {
-        const order = await this.runCommit(eventId, rawSeatIds, buyerId, billing);
+        const order = await this.runCommit(eventId, rawSeatIds, buyerId, billing, holderId);
         span.setAttribute('order.id', order.id);
         span.setAttribute('order.total', order.total.toString());
         span.setStatus({ code: SpanStatusCode.OK });
@@ -95,15 +107,31 @@ export class CheckoutService {
     rawSeatIds: string[],
     buyerId: string,
     billing?: BillingInput,
+    holderId?: string,
   ) {
+    // El dueño del hold puede ser el comprador (compra directa) o un token de
+    // reserva compartida (otra persona paga lo que alguien reservó).
+    const holder = holderId ?? buyerId;
     const seatIds = [...new Set(rawSeatIds)];
     if (seatIds.length === 0) {
       throw new BadRequestException('Debes indicar al menos un asiento');
     }
 
+    // Anti-abuso (2.2): tope de órdenes PENDIENTES no vencidas por comprador. Sin esto
+    // un usuario podría crear muchas órdenes `pending` que amarran asientos como `sold`
+    // sin pagar. El sweeper de vencidas + este tope acotan el daño.
+    const activePending = await this.prisma.order.count({
+      where: { buyerId, status: 'pending', expiresAt: { gt: new Date() } },
+    });
+    if (activePending >= this.maxPendingPerBuyer) {
+      throw new ConflictException(
+        `Tienes ${activePending} órdenes pendientes de pago. Complétalas o cancélalas antes de crear otra.`,
+      );
+    }
+
     // Capa 1: respetar holds ajenos. Si el asiento está reservado por otra
     // persona en Redis, no se puede comprar (aunque en BD siga `available`).
-    await this.assertNoForeignHold(eventId, seatIds, buyerId);
+    await this.assertNoForeignHold(eventId, seatIds, holder);
 
     // Contexto de comisiones DEL EVENTO (pasarela + IVA) — leído ANTES de la
     // transacción (con el cliente base). Dentro de la tx solo se usa la conexión
@@ -111,9 +139,13 @@ export class CheckoutService {
     // sostiene el lock de fila (evita un deadlock de pool bajo alta concurrencia).
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
-      select: { id: true, gatewayId: true, frozenGatewayId: true, ivaOnNet: true },
+      select: { id: true, gatewayId: true, frozenGatewayId: true, ivaOnNet: true, status: true, startsAt: true },
     });
     if (!event) throw new BadRequestException('El evento no existe');
+    // Ventas cerradas si el evento ya inició o concluyó (o no está publicado).
+    if (event.status !== 'published' || event.startsAt.getTime() <= Date.now()) {
+      throw new ConflictException('Las ventas de este evento están cerradas');
+    }
     const fees = await this.pricing.resolveFeesForEvent(event);
 
     try {
@@ -128,7 +160,7 @@ export class CheckoutService {
         },
       );
       // Liberar los holds propios ya consumidos (best-effort, fuera de la tx).
-      await this.releaseOwnHolds(eventId, seatIds, buyerId);
+      await this.releaseOwnHolds(eventId, seatIds, holder);
       return order;
     } catch (e) {
       throw this.translate(e);
@@ -146,6 +178,12 @@ export class CheckoutService {
   ) {
     // Fallar rápido si otro commit tiene el lock demasiado tiempo (no colgar).
     await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${LOCK_TIMEOUT_MS}ms'`);
+
+    // Facturación por defecto del comprador (prefill si el checkout no la trae).
+    const buyerBilling = await tx.user.findUnique({
+      where: { id: buyerId },
+      select: { nit: true, billingName: true },
+    });
 
     // Capa 2: bloquear las filas de asiento. FOR UPDATE OF s bloquea solo `seats`.
     // Los parámetros se castean a uuid: Prisma los envía como texto y Postgres no
@@ -230,8 +268,10 @@ export class CheckoutService {
         feeScheduleId: fees.scheduleId,
         feeScheduleVersion: fees.version,
         feeGatewayId: fees.gatewayId,
-        billingNit: nit && nit.length > 0 ? nit : 'CF',
-        billingName: billing?.name?.trim() || null,
+        // Prefill del perfil: si el checkout no trae NIT/nombre, usa los del comprador
+        // (facturación guardada). Sin NIT → 'CF' (consumidor final).
+        billingNit: nit && nit.length > 0 ? nit : buyerBilling?.nit || 'CF',
+        billingName: billing?.name?.trim() || buyerBilling?.billingName || null,
         billingAddress: billing?.address?.trim() || null,
         expiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS),
         items: { create: itemsData },
@@ -282,6 +322,9 @@ export class CheckoutService {
       const holders = await client.mget(...keys);
       const mine = keys.filter((_, i) => holders[i] === buyerId);
       if (mine.length) await client.del(...mine);
+      // Descuenta del tope simultáneo del holder (seat-hold `hold:owner:<id>`): tras
+      // vender, esos asientos ya no cuentan para su cupo de reservas concurrentes.
+      await client.srem(`hold:owner:${buyerId}`, ...seatIds).catch(() => undefined);
     } catch (e) {
       // No es crítico: el TTL los libera igual. Solo registramos.
       this.logger.warn(`No se pudieron liberar holds tras el commit: ${String(e)}`);

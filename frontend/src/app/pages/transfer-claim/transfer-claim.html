@@ -1,0 +1,30 @@
+<section class="transfer-claim">
+  <h1>{{ 'transfer.claimTitle' | translate }}</h1>
+
+  @if (claimedSerial(); as serial) {
+    <div class="claim-ok" data-testid="claim-ok">
+      <p [innerHTML]="'transfer.claimOk' | translate: { serial: serial }"></p>
+      <button type="button" class="primary" (click)="goToTickets()">{{ 'transfer.seeMyTickets' | translate }}</button>
+    </div>
+  } @else {
+    <p class="muted">{{ 'transfer.claimHint' | translate }}</p>
+    <form (ngSubmit)="claim()">
+      <label for="tc-code">{{ 'transfer.codeLabel' | translate }}</label>
+      <input
+        id="tc-code"
+        type="text"
+        [ngModel]="code()"
+        (ngModelChange)="code.set($event)"
+        name="code"
+        autocomplete="off"
+        data-testid="claim-code"
+      />
+      <button type="submit" class="primary" [disabled]="working()" data-testid="claim-submit">
+        {{ working() ? ('transfer.claiming' | translate) : ('transfer.claimSubmit' | translate) }}
+      </button>
+      @if (error(); as e) {
+        <p class="error" data-testid="claim-error">{{ e }}</p>
+      }
+    </form>
+  }
+</section>

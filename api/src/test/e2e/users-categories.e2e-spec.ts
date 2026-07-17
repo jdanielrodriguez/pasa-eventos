@@ -62,6 +62,112 @@ describe('Users + Categories (e2e)', () => {
     expect(res.body.firstName).toBe('ClienteEditado');
   });
 
+  it('PATCH /users/me persiste la preferencia de idioma y se refleja en /auth/me', async () => {
+    const upd = await http()
+      .patch('/api/v1/users/me')
+      .set(bearer(buyerToken))
+      .send({ language: 'en' })
+      .expect(200);
+    expect(upd.body.language).toBe('en');
+
+    const me = await http().get('/api/v1/auth/me').set(bearer(buyerToken)).expect(200);
+    expect(me.body.language).toBe('en');
+
+    // Restaura el default para no afectar a otros specs seriales.
+    const back = await http()
+      .patch('/api/v1/users/me')
+      .set(bearer(buyerToken))
+      .send({ language: 'es' })
+      .expect(200);
+    expect(back.body.language).toBe('es');
+  });
+
+  it('PATCH /users/me persiste la preferencia de franja de tema (día/noche)', async () => {
+    const upd = await http()
+      .patch('/api/v1/users/me')
+      .set(bearer(buyerToken))
+      .send({ themePref: 'dia' })
+      .expect(200);
+    expect(upd.body.themePref).toBe('dia');
+
+    const me = await http().get('/api/v1/auth/me').set(bearer(buyerToken)).expect(200);
+    expect(me.body.themePref).toBe('dia');
+
+    // Franja inválida → 400.
+    await http()
+      .patch('/api/v1/users/me')
+      .set(bearer(buyerToken))
+      .send({ themePref: 'tarde' })
+      .expect(400);
+
+    // Restaura (noche = default) para no afectar a otros specs seriales.
+    await http()
+      .patch('/api/v1/users/me')
+      .set(bearer(buyerToken))
+      .send({ themePref: 'noche' })
+      .expect(200);
+  });
+
+  it('PATCH /users/me con idioma no soportado → 400', async () => {
+    await http()
+      .patch('/api/v1/users/me')
+      .set(bearer(buyerToken))
+      .send({ language: 'fr' })
+      .expect(400);
+  });
+
+  it('foto de perfil: presign → set → /auth/me firma la URL → clear', async () => {
+    const me = await http().get('/api/v1/auth/me').set(bearer(buyerToken)).expect(200);
+    const userId = me.body.id as string;
+
+    // presign de una imagen → key bajo el prefijo del usuario + URL de subida.
+    const pre = await http()
+      .post('/api/v1/users/me/avatar/presign')
+      .set(bearer(buyerToken))
+      .send({ filename: 'foto.png', contentType: 'image/png' })
+      .expect(201);
+    expect(pre.body.key).toContain(`avatars/${userId}/`);
+    expect(typeof pre.body.uploadUrl).toBe('string');
+
+    // presign de un no-imagen → 400.
+    await http()
+      .post('/api/v1/users/me/avatar/presign')
+      .set(bearer(buyerToken))
+      .send({ filename: 'x.pdf', contentType: 'application/pdf' })
+      .expect(400);
+
+    // presign de SVG → 400 (rechazado a propósito: puede llevar <script>, H-09 auditoría).
+    await http()
+      .post('/api/v1/users/me/avatar/presign')
+      .set(bearer(buyerToken))
+      .send({ filename: 'x.svg', contentType: 'image/svg+xml' })
+      .expect(400);
+
+    // set con una key AJENA (otro usuario) → 400.
+    await http()
+      .patch('/api/v1/users/me/avatar')
+      .set(bearer(buyerToken))
+      .send({ key: 'avatars/00000000-0000-0000-0000-000000000000/x.png' })
+      .expect(400);
+
+    // set con la key propia → avatarUrl firmada (contiene la key).
+    const set = await http()
+      .patch('/api/v1/users/me/avatar')
+      .set(bearer(buyerToken))
+      .send({ key: pre.body.key })
+      .expect(200);
+    expect(set.body.avatarUrl).toContain(`avatars/${userId}/`);
+    expect(set.body).not.toHaveProperty('avatarKey'); // nunca se expone la key
+
+    // /auth/me re-firma la URL al leer.
+    const me2 = await http().get('/api/v1/auth/me').set(bearer(buyerToken)).expect(200);
+    expect(me2.body.avatarUrl).toContain(`avatars/${userId}/`);
+
+    // clear → avatarUrl null.
+    const cleared = await http().delete('/api/v1/users/me/avatar').set(bearer(buyerToken)).expect(200);
+    expect(cleared.body.avatarUrl).toBeNull();
+  });
+
   it('GET /users (admin) lista y busca; no-admin → 403', async () => {
     const list = await http().get('/api/v1/users?search=admin').set(bearer(adminToken)).expect(200);
     expect(Array.isArray(list.body.items ?? list.body)).toBe(true);
@@ -121,6 +227,51 @@ describe('Users + Categories (e2e)', () => {
 
     await http().post('/api/v1/categories').set(bearer(buyerToken)).send({ name: 'x' }).expect(403);
     await http().patch(`/api/v1/categories/${id}`).set(bearer(buyerToken)).send({ name: 'y' }).expect(403);
+  });
+
+  it('GET /categories?all=true incluye inactivas; el listado por defecto solo activas', async () => {
+    const created = await http()
+      .post('/api/v1/categories')
+      .set(bearer(adminToken))
+      .send({ name: `UC ${stamp} Inactiva`, active: false })
+      .expect(201);
+    expect(created.body.active).toBe(false); // rama `dto.active ?? true` con active explícito
+
+    const all = await http().get('/api/v1/categories?all=true').expect(200);
+    expect(all.body.some((c: { id: string }) => c.id === created.body.id)).toBe(true);
+
+    const activeOnly = await http().get('/api/v1/categories').expect(200);
+    expect(activeOnly.body.some((c: { id: string }) => c.id === created.body.id)).toBe(false);
+  });
+
+  it('nombre duplicado → el slug se desambigua con sufijo (uniqueSlug)', async () => {
+    const first = await http()
+      .post('/api/v1/categories')
+      .set(bearer(adminToken))
+      .send({ name: `UC ${stamp} Dup` })
+      .expect(201);
+    const second = await http()
+      .post('/api/v1/categories')
+      .set(bearer(adminToken))
+      .send({ name: `UC ${stamp} Dup` })
+      .expect(201);
+    expect(second.body.slug).not.toBe(first.body.slug);
+    expect(second.body.slug.startsWith(first.body.slug)).toBe(true); // base + sufijo
+  });
+
+  it('actualizar categoría inexistente → 404', async () => {
+    await http()
+      .patch('/api/v1/categories/00000000-0000-0000-0000-000000000000')
+      .set(bearer(adminToken))
+      .send({ description: 'x' })
+      .expect(404);
+  });
+
+  it('borrar categoría inexistente → 404', async () => {
+    await http()
+      .delete('/api/v1/categories/00000000-0000-0000-0000-000000000000')
+      .set(bearer(adminToken))
+      .expect(404);
   });
 
   it('borrar categoría con eventos asociados → 409; sin eventos → 204', async () => {

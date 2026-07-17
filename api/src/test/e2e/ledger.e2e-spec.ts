@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import Decimal from 'decimal.js';
 import { LedgerService } from '../../modules/ledger/ledger.service';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { createTestApp } from './utils';
@@ -69,6 +70,39 @@ describe('Ledger doble-entrada + hash-chain (e2e)', () => {
     expect(check.checked).toBe(2);
   });
 
+  const ORDER_ID = '33333333-3333-4333-8333-333333333333';
+
+  it('orderChain: devuelve la cadena de una orden y la marca verificada', async () => {
+    const chain = await ledger.orderChain(ORDER_ID);
+    expect(chain.orderId).toBe(ORDER_ID);
+    expect(chain.transactions).toHaveLength(1);
+    expect(chain.transactions[0].kind).toBe('order_payment');
+    expect(chain.transactions[0].verified).toBe(true); // hash recomputado coincide
+    expect(chain.transactions[0].seq).toMatch(/^\d+$/);
+    expect(chain.chainValid).toBe(true);
+  });
+
+  it('orderChain: una orden sin movimientos devuelve cadena vacía', async () => {
+    const chain = await ledger.orderChain('99999999-9999-4999-8999-999999999999');
+    expect(chain.transactions).toEqual([]);
+  });
+
+  it('orderChain: marca verified=false si el hash de la transacción fue alterado', async () => {
+    const tx = await prisma.ledgerTransaction.findFirstOrThrow({
+      where: { refType: 'order', refId: ORDER_ID },
+    });
+    const original = tx.hash;
+    await prisma.ledgerTransaction.update({ where: { id: tx.id }, data: { hash: '0'.repeat(64) } });
+    try {
+      const chain = await ledger.orderChain(ORDER_ID);
+      expect(chain.transactions[0].verified).toBe(false); // hash recomputado NO coincide
+      expect(chain.chainValid).toBe(false); // la cadena global también rompe
+    } finally {
+      await prisma.ledgerTransaction.update({ where: { id: tx.id }, data: { hash: original } });
+    }
+    expect((await ledger.verifyChain()).ok).toBe(true); // restaurado
+  });
+
   it('rechaza una transacción que no suma 0 → 400', async () => {
     await expect(
       ledger.post({
@@ -76,6 +110,18 @@ describe('Ledger doble-entrada + hash-chain (e2e)', () => {
         entries: [
           { type: 'user_wallet', ownerId: U1, amount: '50.00' },
           { type: 'gateway_clearing', amount: '-40.00' },
+        ],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rechaza una cuenta de usuario sin ownerId → 400', async () => {
+    await expect(
+      ledger.post({
+        kind: 'bad',
+        entries: [
+          { type: 'user_wallet', amount: '10.00' }, // falta ownerId → BadRequest
+          { type: 'gateway_clearing', amount: '-10.00' },
         ],
       }),
     ).rejects.toThrow();
@@ -110,11 +156,84 @@ describe('Ledger doble-entrada + hash-chain (e2e)', () => {
     expect((await ledger.walletBalance(U2)).toFixed(2)).toBe('150.00'); // 15 * 10
   });
 
+  it('detecta manipulación: alterar el HASH de una transacción rompe el chain', async () => {
+    // El chain está íntegro (tests previos). Corrompemos SOLO el hash de la última
+    // transacción (entries y prevHash intactos): sumará 0 y encadenará bien, pero el
+    // hash recomputado no coincidirá → verifyChain debe fallar en ESA tx (línea 188).
+    const last = await prisma.ledgerTransaction.findFirstOrThrow({ orderBy: { seq: 'desc' } });
+    const originalHash = last.hash;
+    await prisma.ledgerTransaction.update({
+      where: { id: last.id },
+      data: { hash: '0'.repeat(64) }, // hash con formato válido pero incorrecto
+    });
+    try {
+      const check = await ledger.verifyChain();
+      expect(check.ok).toBe(false);
+      expect(check.brokenAt).toBe(last.id);
+    } finally {
+      await prisma.ledgerTransaction.update({
+        where: { id: last.id },
+        data: { hash: originalHash }, // restaura para no ensuciar tests posteriores
+      });
+    }
+    // Restaurado: el chain vuelve a estar íntegro.
+    expect((await ledger.verifyChain()).ok).toBe(true);
+  });
+
+  it('detecta manipulación: un SALDO cacheado que no cuadra con sus asientos', async () => {
+    // Chain de transacciones íntegro; corrompemos el balance cacheado de una cuenta
+    // para que difiera de la suma de sus asientos → verifyChain lo detecta (línea 201).
+    const acc = await prisma.ledgerAccount.findFirstOrThrow();
+    const originalBalance = acc.balance.toString();
+    await prisma.ledgerAccount.update({
+      where: { id: acc.id },
+      data: { balance: new Decimal(originalBalance).add(1).toFixed(2) },
+    });
+    try {
+      const check = await ledger.verifyChain();
+      expect(check.ok).toBe(false);
+      expect(check.brokenAt).toBe(acc.id);
+    } finally {
+      await prisma.ledgerAccount.update({
+        where: { id: acc.id },
+        data: { balance: originalBalance },
+      });
+    }
+    expect((await ledger.verifyChain()).ok).toBe(true);
+  });
+
   it('detecta manipulación: alterar un asiento invalida el chain (verifyChain ok:false)', async () => {
     const entry = await prisma.ledgerEntry.findFirstOrThrow();
     await prisma.ledgerEntry.update({ where: { id: entry.id }, data: { amount: '999.99' } });
     const check = await ledger.verifyChain();
     expect(check.ok).toBe(false); // huella rota
     expect(check.brokenAt).toBeDefined();
+  });
+
+  // --- eventChain (cadena de la LIQUIDACIÓN por evento, B4/W7) ---
+  // Al final del describe: solo recomputan el hash de la transacción del evento
+  // (no usan verifyChain global, que ya quedó roto por el test anterior).
+  it('eventChain: devuelve la cadena de la LIQUIDACIÓN de un evento (refType=event) verificada', async () => {
+    const EVENT_ID = '44444444-4444-4444-8444-444444444444';
+    await ledger.post({
+      kind: 'event_cash_transfer',
+      refType: 'event',
+      refId: EVENT_ID,
+      entries: [
+        { type: 'promoter_payable', ownerId: U2, amount: '-100.00' },
+        { type: 'platform_revenue', amount: '100.00' },
+      ],
+    });
+    const chain = await ledger.eventChain(EVENT_ID);
+    expect(chain.eventId).toBe(EVENT_ID);
+    expect(chain.transactions).toHaveLength(1);
+    expect(chain.transactions[0].kind).toBe('event_cash_transfer');
+    expect(chain.transactions[0].verified).toBe(true); // hash recomputado coincide
+    expect(chain.chainValid).toBe(true);
+  });
+
+  it('eventChain: un evento sin liquidación devuelve cadena vacía', async () => {
+    const chain = await ledger.eventChain('88888888-8888-4888-8888-888888888888');
+    expect(chain.transactions).toEqual([]);
   });
 });

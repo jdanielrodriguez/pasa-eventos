@@ -1,0 +1,92 @@
+<section class="catalog">
+  @if (showHero() && slides().length > 0) {
+    <app-hero-slider [slides]="slides()" />
+  }
+
+  <h1>{{ 'catalog.title' | translate }}</h1>
+
+  <div class="catalog-search">
+    <app-search-field
+      [value]="search()"
+      (searched)="submitSearch($event)"
+      name="search"
+      testId="catalog-search"
+      [placeholder]="'catalog.searchPlaceholder' | translate"
+      [ariaLabel]="'catalog.searchAria' | translate"
+    />
+  </div>
+
+  @if (showCategories()) {
+    <div class="catalog-categories" role="group" [attr.aria-label]="'catalog.filterByCategory' | translate">
+      <button type="button" [class.active]="activeCategory() === ''" (click)="selectCategory('')">
+        {{ 'catalog.allCategories' | translate }}
+      </button>
+      @for (cat of categories(); track cat.id) {
+        <button
+          type="button"
+          [class.active]="activeCategory() === cat.slug"
+          (click)="selectCategory(cat.slug)"
+        >
+          {{ cat.name }}
+        </button>
+      }
+    </div>
+  }
+
+  @if (loading()) {
+    <app-loading variant="skeleton" data-testid="catalog-loading" />
+  } @else if (errored()) {
+    <app-empty-state
+      variant="generic"
+      data-testid="catalog-error"
+      [title]="'catalog.loadError' | translate"
+      [subtitle]="'catalog.loadErrorHint' | translate"
+    />
+  } @else if (events().length === 0) {
+    @if (hasFilter()) {
+      <app-empty-state
+        variant="generic"
+        data-testid="catalog-empty"
+        [title]="'catalog.noResults' | translate"
+        [subtitle]="'catalog.noResultsHint' | translate"
+      />
+    } @else {
+      <app-empty-state
+        variant="tickets"
+        data-testid="catalog-empty"
+        [title]="'catalog.empty' | translate"
+        [subtitle]="'catalog.emptyHint' | translate"
+      />
+    }
+  } @else {
+    <p class="catalog-count" data-testid="catalog-count">{{ 'catalog.count' | translate: { count: total() } }}</p>
+    <ul class="catalog-grid">
+      @for (ev of events(); track ev.id) {
+        <li class="event-card">
+          <a [routerLink]="['/eventos', ev.slug]">
+            @if (ev.media.at(0)?.url; as img) {
+              <img class="event-thumb" [src]="img" [alt]="ev.name" loading="lazy" />
+            } @else {
+              <div class="event-thumb" aria-hidden="true">{{ ev.name.charAt(0) }}</div>
+            }
+            <h2>{{ ev.name }}</h2>
+            @if (ev.category) {
+              <span class="event-cat">{{ ev.category.name }}</span>
+            }
+            <time [attr.datetime]="ev.startsAt">{{ ev.startsAt | localizedDate: 'medium' }}</time>
+            @if (ev.address) {
+              <span class="event-place">{{ ev.address }}</span>
+            }
+          </a>
+        </li>
+      }
+    </ul>
+
+    <app-pager
+      [page]="page()"
+      [totalPages]="totalPages()"
+      (pageChange)="goToPage($event)"
+    />
+  }
+  <app-tour tourKey="home" [steps]="tourSteps" />
+</section>

@@ -4,6 +4,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { LedgerService } from '../../modules/ledger/ledger.service';
 import { createTestApp, SEED } from './utils';
 import { hmacSha256, sha256 } from '../../common/utils/crypto';
+import { CANON } from './canon';
 
 const SECRET = process.env.PAYMENT_WEBHOOK_SECRET ?? 'dev-webhook-secret-change-me';
 const sign = (id: string, type: string, ref: string) => hmacSha256(SECRET, `${id}.${type}.${ref}`);
@@ -158,7 +159,7 @@ describe('Reembolsos y contracargos (e2e)', () => {
     expect(await bal('promoter_payable', promoterId)).toBe('0');
     expect(await bal('platform_revenue', SYS)).toBe('0');
     expect(await bal('tax_payable', SYS)).toBe('0');
-    expect(await walletBalance(tokenR)).toBe('123.20'); // 129.68 - 6.48 (fee no reembolsable)
+    expect(await walletBalance(tokenR)).toBe(CANON.inflow); // total - gatewayFee (fee no reembolsable)
     expect((await ledger.verifyChain()).ok).toBe(true);
   });
 
@@ -167,7 +168,7 @@ describe('Reembolsos y contracargos (e2e)', () => {
     const res = await webhook('ref_r1', 'payment.refunded', 'irrelevante').expect(200);
     expect(res.body.duplicate).toBe(true);
     expect(await prisma.ledgerTransaction.count()).toBe(before);
-    expect(await walletBalance(tokenR)).toBe('123.20'); // sin recrédito
+    expect(await walletBalance(tokenR)).toBe(CANON.inflow); // sin recrédito
   });
 
   it('contracargo → orden refunded, asiento liberado; NO se acredita al wallet', async () => {
@@ -183,6 +184,37 @@ describe('Reembolsos y contracargos (e2e)', () => {
     expect((await ledger.verifyChain()).ok).toBe(true);
   });
 
+  it('facturación (movimientos): requiere auth y separa ingreso (refund) de egreso (compra)', async () => {
+    // Sin token → 401 (guard global).
+    await http().get('/api/v1/orders/movements').expect(401);
+
+    // El comprador tokenR ya tiene: una compra reembolsada (egreso) + su refund
+    // acreditado al wallet (ingreso, 123.20).
+    const res = await http().get('/api/v1/orders/movements').set(bearer(tokenR)).expect(200);
+    const items = res.body.items as Array<{
+      direction: string;
+      kind: string;
+      amount: string;
+      status: string | null;
+      orderId: string | null;
+      createdAt: string;
+    }>;
+    expect(items.some((i) => i.direction === 'expense' && i.kind === 'purchase')).toBe(true);
+    const refund = items.find((i) => i.direction === 'income' && i.kind === 'refund');
+    expect(refund).toBeDefined();
+    expect(refund?.amount).toBe(CANON.inflow);
+    // v3.7: los ingresos de devolución llevan un `status` coherente ('refunded')
+    // para poder filtrar la facturación por estado igual que los egresos.
+    expect(refund?.status).toBe('refunded');
+    // Los egresos conservan el estado real de la orden (la compra fue reembolsada).
+    const expense = items.find((i) => i.direction === 'expense' && i.kind === 'purchase');
+    expect(expense?.status).toBe('refunded');
+
+    // Ordenado por fecha DESC.
+    const dates = items.map((i) => i.createdAt);
+    expect([...dates].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))).toEqual(dates);
+  });
+
   it('no se puede reembolsar una orden no pagada (webhook ignorado, orden intacta)', async () => {
     const orderId = await order(tokenR, 2);
     const p = await http().post(`/api/v1/orders/${orderId}/pay`).set(bearer(tokenR)).expect(201);
@@ -190,6 +222,6 @@ describe('Reembolsos y contracargos (e2e)', () => {
     await webhook('ref_r_unpaid', 'payment.refunded', p.body.providerRef).expect(200);
     const o = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
     expect(o.status).toBe('pending'); // intacta
-    expect(await walletBalance(tokenR)).toBe('123.20'); // sin cambios
+    expect(await walletBalance(tokenR)).toBe(CANON.inflow); // sin cambios
   });
 });

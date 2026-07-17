@@ -5,6 +5,7 @@
 COMPOSE      = docker compose -f docker-compose.local.yml
 COMPOSE_TEST = docker compose -f docker-compose.local.yml -f docker-compose.test.yml
 API          = pasaeventos_api
+FRONT        = pasaeventos_frontend
 DB           = pasaeventos_db
 NETWORK      = pasaeventos_network
 K6_IMAGE     = grafana/k6:latest
@@ -83,6 +84,35 @@ test-all:
 .PHONY: smoke
 smoke:
 	docker exec $(API) npm run smoke
+
+# --- Frontend Angular (dentro del contenedor pasaeventos_frontend) ---
+.PHONY: front-logs
+front-logs:
+	$(COMPOSE) logs -f --tail=120 $(FRONT)
+
+.PHONY: front-shell
+front-shell:
+	docker exec -it $(FRONT) /bin/bash
+
+.PHONY: front-test
+front-test:
+	docker exec $(FRONT) npm test -- --watch=false
+
+.PHONY: front-lint
+front-lint:
+	docker exec $(FRONT) npm run lint
+
+# Regenera el SDK tipado del backend a partir de docs/openapi.json.
+.PHONY: gen-api
+gen-api:
+	docker exec $(FRONT) npm run gen:api
+
+# E2E de cara al usuario (Puppeteer) contra el stack real: catálogo, detalle/SEO,
+# 404, login con 2FA (OTP de MailHog) y compra completa hasta el pago por SSE.
+# Requiere PAYMENT_SIMULATOR_AUTO_CONFIRM=true en .env (dev).
+.PHONY: e2e
+e2e:
+	docker exec $(API) node /app/tools/e2e/e2e.mjs
 
 # --- Pruebas de carga (K6) del on-sale ---
 # make load                      # ciclo completo: seed 10k + spike + verificación

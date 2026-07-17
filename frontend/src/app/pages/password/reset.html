@@ -1,0 +1,48 @@
+<div class="auth-wrap">
+  <section class="auth-card">
+    <h1>{{ 'auth.resetTitle' | translate }}</h1>
+    <p class="auth-sub">{{ 'auth.resetSubtitle' | translate }}</p>
+
+    @if (!token()) {
+      <p class="form-error" data-testid="reset-no-token">
+        {{ 'auth.resetNoToken1' | translate }}
+        <a routerLink="/recuperar">{{ 'auth.resetNoTokenLink' | translate }}</a>.
+      </p>
+    } @else {
+      <form (ngSubmit)="submit()">
+        <div class="field">
+          <label for="password">{{ 'auth.newPassword' | translate }}</label>
+          <input
+            id="password"
+            type="password"
+            name="password"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="••••••••"
+            [ngModel]="password()"
+            (ngModelChange)="password.set($event)"
+            required
+          />
+        </div>
+        <div class="field">
+          <label for="confirm">{{ 'auth.confirmPassword' | translate }}</label>
+          <input
+            id="confirm"
+            type="password"
+            name="confirm"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="••••••••"
+            [ngModel]="confirm()"
+            (ngModelChange)="confirm.set($event)"
+            required
+          />
+        </div>
+        <button type="submit" class="primary btn-block" [disabled]="submitting()" data-testid="reset-submit">
+          {{ submitting() ? ('auth.saving' | translate) : ('auth.resetSubmit' | translate) }}
+        </button>
+      </form>
+      <p class="auth-alt"><a routerLink="/login">{{ 'auth.backToLogin' | translate }}</a></p>
+    }
+  </section>
+</div>

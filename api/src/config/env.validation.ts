@@ -7,7 +7,7 @@ import * as Joi from 'joi';
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
   PORT: Joi.number().default(8080),
-  APP_NAME: Joi.string().default('PasaEventos'),
+  APP_NAME: Joi.string().default('Boletiva'),
   TZ: Joi.string().default('America/Guatemala'),
 
   // Base de datos (Prisma / PostgreSQL)
@@ -52,6 +52,7 @@ export const envValidationSchema = Joi.object({
   JWT_ACCESS_TTL: Joi.number().default(900),
   JWT_REFRESH_SECRET: Joi.string().default('dev-refresh-secret-change-me'),
   JWT_REFRESH_TTL: Joi.number().default(1209600),
+  IMPERSONATION_TOKEN_TTL: Joi.number().default(1800), // token de impersonación (v3.8)
 
   // Llave de cifrado simétrico en reposo (AES-256-GCM), 32 bytes en hex (64 chars).
   // En prod DEBE venir de Secret Manager y ser única/rotable.
@@ -60,8 +61,10 @@ export const envValidationSchema = Joi.object({
     .length(64)
     .default('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'),
 
-  // Google OAuth (opcional; si falta, el login con Google queda deshabilitado)
+  // Google OAuth (opcional; si falta, el login con Google queda deshabilitado).
+  // Disponible = clientId + clientSecret (ambos los emite la consola de credenciales).
   GOOGLE_CLIENT_ID: Joi.string().allow('').optional(),
+  GOOGLE_CLIENT_SECRET: Joi.string().allow('').optional(),
 
   // Pagos (Ola 3)
   PAYMENT_PROVIDER: Joi.string().default('simulator'),

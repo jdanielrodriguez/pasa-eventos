@@ -79,6 +79,8 @@ describe('Boletos: emisión + media + validación (e2e)', () => {
       where: { id: sOp.body.user.id },
       data: { emailVerifiedAt: new Date(), roles: ['gate_operator'] },
     });
+    // 8.1: el operador valida en puerta solo si está asignado al evento.
+    await prisma.gateAssignment.create({ data: { eventId, operatorId: sOp.body.user.id } });
     operatorToken = await loginTrusted(emailOp, 'tkt-devOp');
     adminToken = await loginTrusted(SEED.admin, 'tkt-devAdmin');
   });
@@ -105,6 +107,9 @@ describe('Boletos: emisión + media + validación (e2e)', () => {
     await prisma.webhookEvent.deleteMany({});
     await prisma.ledgerEntry.deleteMany({});
     await prisma.ledgerTransaction.deleteMany({});
+    // Borrar también las cuentas: dejarlas con saldo cacheado (sin asientos) rompe
+    // el verifyChain GLOBAL de otras suites (balance ≠ suma de asientos).
+    await prisma.ledgerAccount.deleteMany({});
     await prisma.order.deleteMany({ where: { eventId } });
     await prisma.event.deleteMany({ where: { id: eventId } });
     await prisma.user.deleteMany({ where: { email: { contains: `_${evStamp}@test.com` } } });
@@ -172,6 +177,8 @@ describe('Boletos: emisión + media + validación (e2e)', () => {
   it('GET /tickets lista los míos; el detalle ajeno da 404 (IDOR)', async () => {
     const mine = await http().get('/api/v1/tickets').set(bearer(buyerToken)).expect(200);
     expect(mine.body.items.length).toBeGreaterThanOrEqual(1);
+    // El resumen incluye el banner del evento (firmado; null si el evento no tiene cover).
+    expect(mine.body.items[0]).toHaveProperty('eventBannerUrl');
     const id = mine.body.items[0].id;
     await http().get(`/api/v1/tickets/${id}`).set(bearer(buyerToken)).expect(200);
     await http().get(`/api/v1/tickets/${id}`).set(bearer(buyerBToken)).expect(404);

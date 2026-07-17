@@ -13,6 +13,7 @@ import { TicketSigningService } from './ticket-signing.service';
 import { TicketCryptoService, TicketIdentity } from './ticket-crypto.service';
 import { TicketCustodyService } from './ticket-custody.service';
 import { TicketSyncService } from './ticket-sync.service';
+import { GateAccessService } from './gate-access.service';
 
 export type VerifyResult =
   | {
@@ -44,6 +45,7 @@ export class TicketsService implements OnModuleInit {
     private readonly queue: QueueService,
     private readonly custody: TicketCustodyService,
     private readonly sync: TicketSyncService,
+    private readonly gateAccess: GateAccessService,
   ) {}
 
   onModuleInit(): void {
@@ -152,28 +154,69 @@ export class TicketsService implements OnModuleInit {
     return `PE${randomToken(9).toUpperCase()}`;
   }
 
+  /**
+   * Include común del resumen: evento (con su media `cover` para el banner del
+   * boleto estilo póster), localidad y asiento.
+   */
+  private readonly summaryInclude = {
+    event: {
+      select: {
+        name: true,
+        slug: true,
+        startsAt: true,
+        endsAt: true,
+        media: { where: { kind: 'cover' as const }, orderBy: { position: 'asc' as const }, take: 1, select: { key: true } },
+      },
+    },
+    locality: { select: { name: true } },
+    seat: { select: { label: true } },
+    orderItem: { select: { total: true } },
+  } satisfies Prisma.TicketInclude;
+
   /** Boletos del usuario autenticado (keyset por `(issuedAt, id)` desc). */
   async listMine(userId: string, page: KeysetQuery = {}) {
     const rows = await this.prisma.ticket.findMany({
       where: { ownerId: userId },
       orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
-      include: { event: { select: { name: true, slug: true, startsAt: true } } },
+      include: this.summaryInclude,
       ...keysetTake(page),
     });
     const res = keysetResult(rows, page);
-    return { items: res.items.map((t) => this.toSummary(t)), nextCursor: res.nextCursor };
+    // Firma cada banner una sola vez por clave (varios boletos comparten evento).
+    const bannerByKey = await this.signBanners(res.items);
+    const items = await Promise.all(res.items.map((t) => this.toSummary(t, bannerByKey)));
+    return { items, nextCursor: res.nextCursor };
   }
 
   /** Detalle de un boleto (dueño o admin; si no, 404 para no filtrar existencia). */
   async getOne(id: string, user: AuthUser) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
-      include: { event: { select: { name: true, slug: true, startsAt: true } } },
+      include: this.summaryInclude,
     });
     if (!ticket || (ticket.ownerId !== user.userId && !user.roles.includes(Role.admin))) {
       throw new NotFoundException('Boleto no encontrado');
     }
-    return this.toSummary(ticket);
+    return this.toSummary(ticket, await this.signBanners([ticket]));
+  }
+
+  /**
+   * Firma la URL (TTL 1h) del banner `cover` de cada evento presente, una sola
+   * vez por clave. Devuelve un mapa clave→URL firmada para el póster del boleto.
+   */
+  private async signBanners(
+    tickets: { event?: { media?: { key: string }[] } | null }[],
+  ): Promise<Map<string, string>> {
+    const keys = new Set<string>();
+    for (const t of tickets) {
+      const key = t.event?.media?.[0]?.key;
+      if (key) keys.add(key);
+    }
+    const map = new Map<string, string>();
+    await Promise.all(
+      [...keys].map(async (key) => map.set(key, await this.storage.signedGetUrl(key, 3600))),
+    );
+    return map;
   }
 
   /**
@@ -219,7 +262,7 @@ export class TicketsService implements OnModuleInit {
    * estado. Si `checkIn`, marca el boleto como usado de forma atómica (una única
    * entrada por boleto, a prueba de doble check-in concurrente).
    */
-  async verify(payload: string, checkIn = true, actorId?: string): Promise<VerifyResult> {
+  async verify(payload: string, checkIn = true, actor?: AuthUser): Promise<VerifyResult> {
     const parsed = this.crypto.parseQr(payload);
     if (!parsed) return { valid: false, reason: 'malformed' };
 
@@ -228,6 +271,10 @@ export class TicketsService implements OnModuleInit {
       include: { seat: { select: { label: true } } },
     });
     if (!ticket) return { valid: false, reason: 'not_found', serial: parsed.serial };
+
+    // 8.1: el operador debe estar asignado al evento del boleto (admin exento). Se
+    // valida tras resolver el boleto (su evento); un no asignado no valida ni marca.
+    if (actor) await this.gateAccess.assertAssignedToEvent(ticket.eventId, actor);
 
     const secret = this.encryption.decrypt(ticket.totpSecret);
     if (!this.crypto.verifyRotatingCode(parsed.code, secret)) {
@@ -271,7 +318,7 @@ export class TicketsService implements OnModuleInit {
       await this.custody.record({
         ticketId: ticket.id,
         type: 'checked_in',
-        actorId: actorId ?? null,
+        actorId: actor?.userId ?? null,
       });
       await this.sync.record(ticket.eventId, ticket.id, 'checked_in');
     }
@@ -318,24 +365,42 @@ export class TicketsService implements OnModuleInit {
     return { integrity, events };
   }
 
-  private toSummary(t: {
-    id: string;
-    serial: string;
-    status: TicketStatus;
-    seatId: string | null;
-    qrKey: string | null;
-    pdfKey: string | null;
-    mediaReadyAt: Date | null;
-    eventId: string;
-    event?: { name: string; slug: string; startsAt: Date };
-  }) {
+  private toSummary(
+    t: {
+      id: string;
+      serial: string;
+      status: TicketStatus;
+      seatId: string | null;
+      orderId: string;
+      localityId: string;
+      qrKey: string | null;
+      pdfKey: string | null;
+      mediaReadyAt: Date | null;
+      eventId: string;
+      event?: { name: string; slug: string; startsAt: Date; endsAt: Date; media?: { key: string }[] } | null;
+      locality?: { name: string } | null;
+      seat?: { label: string } | null;
+      orderItem?: { total: unknown } | null;
+    },
+    bannerByKey?: Map<string, string>,
+  ) {
+    const coverKey = t.event?.media?.[0]?.key;
     return {
       id: t.id,
       serial: t.serial,
       status: t.status,
       seatId: t.seatId,
+      orderId: t.orderId,
+      localityId: t.localityId,
+      localityName: t.locality?.name ?? null,
+      seatLabel: t.seat?.label ?? null,
+      amount: t.orderItem?.total != null ? String(t.orderItem.total) : null,
       eventId: t.eventId,
-      event: t.event,
+      event: t.event
+        ? { name: t.event.name, slug: t.event.slug, startsAt: t.event.startsAt, endsAt: t.event.endsAt }
+        : undefined,
+      // Banner del evento (firmado) para el boleto estilo póster; null si no hay cover.
+      eventBannerUrl: (coverKey && bannerByKey?.get(coverKey)) ?? null,
       mediaReady: t.mediaReadyAt != null,
     };
   }

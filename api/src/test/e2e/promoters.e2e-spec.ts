@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { MailService } from '../../infra/mail/mail.service';
 import { createTestApp, SEED } from './utils';
 import { sha256 } from '../../common/utils/crypto';
 
@@ -69,6 +70,7 @@ describe('Autorización de promotores (e2e)', () => {
     const users = await prisma.user.findMany({ where: { email: { contains: `_${stamp}@test.com` } } });
     const ids = users.map((u) => u.id);
     await prisma.event.deleteMany({ where: { promoterId: { in: ids } } });
+    await prisma.promoterStatusEvent.deleteMany({ where: { promoterId: { in: ids } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await app.close();
   });
@@ -228,6 +230,9 @@ describe('Autorización de promotores (e2e)', () => {
     await prisma.locality.create({
       data: { eventId: created.body.id, name: 'GA', slug: 'ga', kind: 'general', capacity: 10 },
     });
+    await prisma.eventMedia.create({
+      data: { eventId: created.body.id, key: `events/${created.body.id}/cover.svg`, kind: 'cover', position: 0 },
+    });
     await http().post(`/api/v1/events/${created.body.id}/publish`).set(bearer(adminToken)).expect(200);
   });
 
@@ -249,6 +254,205 @@ describe('Autorización de promotores (e2e)', () => {
     await http().post(`/api/v1/promoters/${u.id}/suspend`).set(bearer(token)).send({}).expect(403);
     await http().post('/api/v1/promoters/apply').expect(401);
     await http().get('/api/v1/promoters/me').expect(401);
+  });
+
+  it('historial append-only: registra cada transición; reactivar deja traza; RBAC', async () => {
+    const u = await newVerifiedUser('hist');
+    const token = await loginTrusted(u.email, 'promo-hist');
+    await http().post('/api/v1/promoters/apply').set(bearer(token)).expect(200);
+    await http()
+      .post(`/api/v1/promoters/${u.id}/approve`)
+      .set(bearer(adminToken))
+      .expect(200);
+    await http()
+      .post(`/api/v1/promoters/${u.id}/suspend`)
+      .set(bearer(adminToken))
+      .send({ note: 'incumplimiento' })
+      .expect(200);
+    // Reactivar (aprobar de nuevo) conserva el historial.
+    await http()
+      .post(`/api/v1/promoters/${u.id}/approve`)
+      .set(bearer(adminToken))
+      .expect(200);
+
+    const hist = await http()
+      .get(`/api/v1/promoters/${u.id}/history`)
+      .set(bearer(adminToken))
+      .expect(200);
+    // 3 transiciones: approved, suspended (con motivo), approved (reactivación). DESC.
+    expect(hist.body.length).toBe(3);
+    expect(hist.body[0].statusTo).toBe('approved');
+    expect(hist.body[1]).toMatchObject({
+      statusFrom: 'approved',
+      statusTo: 'suspended',
+      reason: 'incumplimiento',
+    });
+    expect(hist.body[1].adminId).toBeTruthy();
+
+    // RBAC: no-admin no ve el historial; id inexistente → 404.
+    await http().get(`/api/v1/promoters/${u.id}/history`).set(bearer(token)).expect(403);
+    const ghost = '00000000-0000-0000-0000-000000000000';
+    await http().get(`/api/v1/promoters/${ghost}/history`).set(bearer(adminToken)).expect(404);
+  });
+
+  // ---- Correos del ciclo de promotor (cola MAIL, v3.8) ----
+
+  it('aplicar dispara el correo "recibimos tu solicitud"', async () => {
+    const mail = app.get(MailService);
+    const spy = jest.spyOn(mail, 'sendTemplated').mockResolvedValue(undefined);
+    try {
+      await ensureRequireApproval(true);
+      const u = await newVerifiedUser('mail-apply');
+      const token = await loginTrusted(u.email, 'promo-mailapply');
+      spy.mockClear();
+      await http().post('/api/v1/promoters/apply').set(bearer(token)).expect(200);
+
+      const call = spy.mock.calls.find((c) => c[0] === u.email);
+      expect(call).toBeTruthy();
+      expect(call?.[1]).toMatch(/solicitud/i); // asunto
+      expect(call?.[2].title).toMatch(/Recibimos tu solicitud/i);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('aprobar/rechazar/suspender disparan el correo con el estado correcto (+ nota)', async () => {
+    const mail = app.get(MailService);
+    const spy = jest.spyOn(mail, 'sendTemplated').mockResolvedValue(undefined);
+    try {
+      await ensureRequireApproval(true);
+      const u = await newVerifiedUser('mail-decide');
+      const token = await loginTrusted(u.email, 'promo-maildecide');
+      await http().post('/api/v1/promoters/apply').set(bearer(token)).expect(200);
+
+      spy.mockClear();
+      await http().post(`/api/v1/promoters/${u.id}/approve`).set(bearer(adminToken)).expect(200);
+      expect(spy.mock.calls.find((c) => c[0] === u.email && /aprobada/i.test(c[1]))).toBeTruthy();
+
+      spy.mockClear();
+      await http()
+        .post(`/api/v1/promoters/${u.id}/suspend`)
+        .set(bearer(adminToken))
+        .send({ note: 'motivo-de-prueba' })
+        .expect(200);
+      const sus = spy.mock.calls.find((c) => c[0] === u.email);
+      expect(sus).toBeTruthy();
+      expect(sus?.[1]).toMatch(/suspendida/i);
+      expect(sus?.[2].bodyHtml).toContain('motivo-de-prueba'); // la nota viaja en el correo
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('modo pruebas: aplicar auto-aprueba y envía el correo de aprobación', async () => {
+    const mail = app.get(MailService);
+    const spy = jest.spyOn(mail, 'sendTemplated').mockResolvedValue(undefined);
+    try {
+      await ensureRequireApproval(false);
+      const u = await newVerifiedUser('mail-testmode');
+      const token = await loginTrusted(u.email, 'promo-mailtestmode');
+      spy.mockClear();
+      const applied = await http().post('/api/v1/promoters/apply').set(bearer(token)).expect(200);
+      expect(applied.body.promoterStatus).toBe('approved');
+      expect(spy.mock.calls.find((c) => c[0] === u.email && /aprobada/i.test(c[1]))).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+      await ensureRequireApproval(true);
+    }
+  });
+
+  it('nota interna del admin: se guarda, se lee en el listado y NO se filtra al promotor', async () => {
+    const u = await newVerifiedUser('note');
+    const token = await loginTrusted(u.email, 'promo-note');
+    await http().post('/api/v1/promoters/apply').set(bearer(token)).expect(200);
+
+    // Guardar la nota (admin).
+    const set = await http()
+      .patch(`/api/v1/promoters/${u.id}/note`)
+      .set(bearer(adminToken))
+      .send({ note: 'Cliente VIP, contactar por WhatsApp' })
+      .expect(200);
+    expect(set.body.promoterInternalNote).toBe('Cliente VIP, contactar por WhatsApp');
+
+    // Se lee en el listado admin.
+    const list = await http().get('/api/v1/promoters?status=pending').set(bearer(adminToken)).expect(200);
+    const row = list.body.find((p: { id: string }) => p.id === u.id);
+    expect(row.promoterInternalNote).toBe('Cliente VIP, contactar por WhatsApp');
+
+    // El propio promotor NO ve la nota interna en /promoters/me.
+    const me = await http().get('/api/v1/promoters/me').set(bearer(token)).expect(200);
+    expect(me.body.promoterInternalNote).toBeUndefined();
+
+    // Borrar la nota (null).
+    const cleared = await http()
+      .patch(`/api/v1/promoters/${u.id}/note`)
+      .set(bearer(adminToken))
+      .send({ note: null })
+      .expect(200);
+    expect(cleared.body.promoterInternalNote).toBeNull();
+  });
+
+  it('nota interna: RBAC no-admin → 403; id inexistente → 404; >2000 chars → 400', async () => {
+    const u = await newVerifiedUser('note-rbac');
+    const token = await loginTrusted(u.email, 'promo-noterbac');
+    await http().patch(`/api/v1/promoters/${u.id}/note`).set(bearer(token)).send({ note: 'x' }).expect(403);
+    await http()
+      .patch('/api/v1/promoters/00000000-0000-0000-0000-000000000000/note')
+      .set(bearer(adminToken))
+      .send({ note: 'x' })
+      .expect(404);
+    await http()
+      .patch(`/api/v1/promoters/${u.id}/note`)
+      .set(bearer(adminToken))
+      .send({ note: 'x'.repeat(2001) })
+      .expect(400);
+  });
+
+  // ---- Plan del promotor (free/premium) + registro en un paso ----
+
+  it('apply con tier=premium queda registrado en el plan del promotor', async () => {
+    const u = await newVerifiedUser('tier');
+    const token = await loginTrusted(u.email, 'promo-tier');
+    const applied = await http()
+      .post('/api/v1/promoters/apply')
+      .set(bearer(token))
+      .send({ tier: 'premium' })
+      .expect(200);
+    expect(applied.body.promoterTier).toBe('premium');
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
+    expect(row.promoterTier).toBe('premium');
+  });
+
+  it('apply sin tier usa free por defecto', async () => {
+    const u = await newVerifiedUser('tierdef');
+    const token = await loginTrusted(u.email, 'promo-tierdef');
+    const applied = await http().post('/api/v1/promoters/apply').set(bearer(token)).expect(200);
+    expect(applied.body.promoterTier).toBe('free');
+  });
+
+  it('POST /promoters/register (público): crea la cuenta y la deja como promotor pending', async () => {
+    const email = `promo_reg_${stamp}@test.com`;
+    const res = await http()
+      .post('/api/v1/promoters/register')
+      .send({ email, password: 'Password123', firstName: 'Reg', tier: 'premium' })
+      .expect(201);
+    expect(res.body.user.email).toBe(email);
+    expect(res.body.tokens.accessToken).toBeTruthy();
+    expect(res.body.promoter).toMatchObject({ promoterStatus: 'pending', promoterTier: 'premium' });
+  });
+
+  it('POST /promoters/register: correo duplicado → 409', async () => {
+    await http()
+      .post('/api/v1/promoters/register')
+      .send({ email: SEED.admin, password: 'Password123', firstName: 'Dup' })
+      .expect(409);
+  });
+
+  it('POST /promoters/register: payload inválido → 400', async () => {
+    await http()
+      .post('/api/v1/promoters/register')
+      .send({ email: 'no-es-correo', password: '123', firstName: '' })
+      .expect(400);
   });
 
   it('validación: settings no booleano → 400; note >500 chars → 400', async () => {

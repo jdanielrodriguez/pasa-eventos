@@ -1,0 +1,33 @@
+<div class="auth-wrap">
+  <section class="auth-card">
+    <h1>{{ 'auth.recoverTitle' | translate }}</h1>
+    <p class="auth-sub">{{ 'auth.recoverSubtitle' | translate }}</p>
+
+    @if (sent()) {
+      <p class="ok" data-testid="recover-sent">
+        {{ 'auth.recoverSent' | translate }}
+      </p>
+      <p class="auth-alt"><a routerLink="/login">{{ 'auth.backToLogin' | translate }}</a></p>
+    } @else {
+      <form (ngSubmit)="submit()">
+        <div class="field">
+          <label for="email">{{ 'auth.email' | translate }}</label>
+          <input
+            id="email"
+            type="email"
+            name="email"
+            autocomplete="email"
+            [attr.placeholder]="'auth.emailPlaceholder' | translate"
+            [ngModel]="email()"
+            (ngModelChange)="email.set($event)"
+            required
+          />
+        </div>
+        <button type="submit" class="primary btn-block" [disabled]="submitting()" data-testid="recover-submit">
+          {{ submitting() ? ('common.sending' | translate) : ('auth.sendLink' | translate) }}
+        </button>
+      </form>
+      <p class="auth-alt">{{ 'auth.rememberedQ' | translate }} <a routerLink="/login">{{ 'auth.loginLink' | translate }}</a></p>
+    }
+  </section>
+</div>

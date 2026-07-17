@@ -1,0 +1,83 @@
+<section class="txn-detail">
+  <app-back-link link="/cuenta" [queryParams]="{ s: 'facturacion' }" testId="txn-back" [label]="'account.txn.back' | translate" />
+
+  <h1>{{ 'account.txn.title' | translate }}</h1>
+
+  @if (loading()) {
+    <p class="muted" data-testid="txn-loading">{{ 'account.txn.loading' | translate }}</p>
+  } @else if (order()) {
+    @if (order(); as o) {
+    <article class="txn-card" data-testid="txn-card">
+      <header class="txn-head">
+        <div>
+          <h2>{{ o.event?.name ?? o.eventId }}</h2>
+          <span class="muted">{{ o.createdAt | localizedDate: 'EEEE d MMM y, HH:mm' }}</span>
+        </div>
+        <span class="badge badge-{{ o.status }}" data-testid="txn-status">{{ o.status }}</span>
+      </header>
+
+      <dl class="txn-meta">
+        <div><dt>{{ 'account.txn.paymentMethod' | translate }}</dt><dd>{{ 'account.txn.card' | translate }}</dd></div>
+        <div>
+          <dt>{{ 'account.nav.billing' | translate }}</dt>
+          <dd>
+            @if (o.felUuid) { {{ 'account.billing.fel' | translate: { serie: o.felSerie, numero: o.felNumero } }} } @else { {{ 'account.billing.nit' | translate: { nit: o.billingNit } }} }
+            @if (o.billingName) { · {{ o.billingName }} }
+          </dd>
+        </div>
+      </dl>
+
+      <h3>{{ 'account.txn.tickets' | translate }}</h3>
+      <ul class="txn-items" data-testid="txn-items">
+        @for (it of o.items; track it.id) {
+          <li>
+            <span class="txn-item-desc">
+              {{ it.locality?.name ?? ('account.general' | translate) }}@if (it.label) { · {{ 'account.tickets.seat' | translate }} {{ it.label }}}
+            </span>
+            <span class="txn-item-amt">{{ it.total | money }}</span>
+          </li>
+        }
+      </ul>
+
+      <div class="txn-totals">
+        <div class="row"><span>{{ 'account.txn.ticketPrice' | translate }}</span><span>{{ o.net | money }}</span></div>
+        <div class="row"><span>{{ 'account.txn.serviceFee' | translate }}</span><span data-testid="txn-servicefee">{{ serviceFee() | money }}</span></div>
+        <div class="row"><span>{{ 'account.txn.iva' | translate }}</span><span>{{ o.iva | money }}</span></div>
+        <div class="row total"><span>{{ 'common.total' | translate }}</span><span data-testid="txn-total">{{ o.total | money }}</span></div>
+      </div>
+
+      <div class="txn-chain-actions">
+        <button type="button" class="link-btn" (click)="toggleChain()" data-testid="txn-toggle-chain">
+          {{ (chain() ? 'account.txn.hideBlockchain' : 'account.txn.showBlockchain') | translate }}
+        </button>
+      </div>
+
+      @if (loadingChain()) {
+        <p class="muted">{{ 'account.chain.loading' | translate }}</p>
+      }
+      @if (chain(); as c) {
+        <div class="chain" data-testid="txn-chain">
+          <p class="chain-status" [class.ok]="c.chainValid" [class.bad]="!c.chainValid">
+            {{ (c.chainValid ? 'account.chain.valid' : 'account.chain.invalid') | translate }}
+          </p>
+          <ol class="chain-list">
+            @for (tx of c.transactions; track tx.seq) {
+              <li class="chain-node" [class.verified]="tx.verified">
+                <span class="chain-seq">#{{ tx.seq }}</span>
+                <span class="chain-kind">{{ tx.kind }}</span>
+                <span class="chain-hash" [title]="tx.hash">{{ tx.hash.slice(0, 12) }}…</span>
+                <span class="chain-check">{{ tx.verified ? '✓' : '✗' }}</span>
+              </li>
+            }
+          </ol>
+          <p class="muted chain-note">
+            {{ 'account.chain.note' | translate }}
+          </p>
+        </div>
+      }
+    </article>
+    }
+  } @else {
+    <p class="muted" data-testid="txn-notfound">{{ 'account.txn.notFound' | translate }}</p>
+  }
+</section>

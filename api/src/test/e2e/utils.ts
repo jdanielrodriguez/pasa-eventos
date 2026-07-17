@@ -1,4 +1,5 @@
 import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../app.module';
@@ -8,6 +9,9 @@ import { AllExceptionsFilter } from '../../common/filters/all-exceptions.filter'
 export async function createTestApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication({ logger: false });
+  // Espeja main.ts: resuelve `req.ip` según `trust proxy` (controlable por TRUST_PROXY
+  // en los tests que ejercitan el anti-abuso por IP).
+  app.getHttpAdapter().getInstance().set('trust proxy', app.get(ConfigService).get('security.trustProxy') ?? false);
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(
@@ -51,6 +55,16 @@ export const SEED = {
   buyer: 'cliente@pasaeventos.com',
 };
 
+/**
+ * Restaura una variable de entorno a su valor previo tras un test que la sobreescribió.
+ * Si el valor previo era `undefined`, la BORRA (asignar `undefined` la volvería el string
+ * 'undefined' y contaminaría a otras suites de la corrida serial).
+ */
+export function restoreEnv(key: string, prev: string | undefined): void {
+  if (prev === undefined) delete process.env[key];
+  else process.env[key] = prev;
+}
+
 // ---- Helpers de correo (MailHog) para probar códigos/enlaces ----
 import axios from 'axios';
 
@@ -59,6 +73,36 @@ const MAILHOG = process.env.MAILHOG_URL ?? 'http://pasaeventos_mailhog:8025';
 /** Borra todos los correos capturados (llamar antes de disparar un envío). */
 export async function clearMail(): Promise<void> {
   await axios.delete(`${MAILHOG}/api/v1/messages`).catch(() => undefined);
+}
+
+/** Devuelve el correo (subject + body decodificado) más reciente enviado a `email`. */
+export async function lastEmailFor(
+  email: string,
+): Promise<{ subject: string; body: string }> {
+  for (let i = 0; i < 12; i++) {
+    const { data } = await axios.get(`${MAILHOG}/api/v2/messages`);
+    for (const m of data.items ?? []) {
+      const to = (m.Content?.Headers?.To ?? []).join(',');
+      if (to.includes(email)) {
+        const subject = (m.Content?.Headers?.Subject ?? []).join(' ');
+        const body = String(m.Content?.Body ?? '').replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+        return { subject, body };
+      }
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new Error(`No llegó correo para ${email}`);
+}
+
+/** Devuelve los asuntos de TODOS los correos capturados para `email` (para E2). */
+export async function subjectsFor(email: string): Promise<string[]> {
+  const { data } = await axios.get(`${MAILHOG}/api/v2/messages`);
+  const out: string[] = [];
+  for (const m of data.items ?? []) {
+    const to = (m.Content?.Headers?.To ?? []).join(',');
+    if (to.includes(email)) out.push((m.Content?.Headers?.Subject ?? []).join(' '));
+  }
+  return out;
 }
 
 /** Devuelve el código de 6 dígitos del correo más reciente enviado a `email`. */

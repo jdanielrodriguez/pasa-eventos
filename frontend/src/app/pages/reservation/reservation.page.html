@@ -1,0 +1,37 @@
+<section class="reservation">
+  @if (reservation(); as r) {
+    <h1>{{ 'reservation.title' | translate }}</h1>
+    <p class="reservation-event">{{ r.eventName }} · {{ r.startsAt | localizedDate: 'medium' }}</p>
+
+    @if (r.valid) {
+      <p class="countdown" data-testid="countdown">{{ 'reservation.expiresIn' | translate: { mm: mm(), ss: (ss() | number: '2.0-0') } }}</p>
+    } @else {
+      <p class="warn" data-testid="reservation-expired">{{ 'reservation.expired' | translate }}</p>
+    }
+
+    <app-reservation-items [items]="r.items" />
+    <p class="total">{{ 'reservation.total' | translate: { total: r.total } }}</p>
+
+    @if (error()) {
+      <p class="error" data-testid="reservation-error">{{ error() }}</p>
+    }
+
+    @if (r.valid) {
+      <button type="button" class="primary" data-testid="pay-btn" [disabled]="working()" (click)="continueToPay()">
+        {{ working() ? ('reservation.processing' | translate) : ('reservation.continueToPay' | translate) }}
+      </button>
+    }
+  } @else if (loading()) {
+    <p data-testid="reservation-loading">{{ 'reservation.loading' | translate }}</p>
+  } @else {
+    <div class="reservation-invalid" data-testid="reservation-invalid">
+      <h1>{{ 'reservation.invalidTitle' | translate }}</h1>
+      <p>{{ 'reservation.invalidBody' | translate }}</p>
+      <a routerLink="/">{{ 'reservation.seeEvents' | translate }}</a>
+    </div>
+  }
+
+  @if (showLogin()) {
+    <app-login-modal (loggedIn)="onLoggedIn()" (dismiss)="showLogin.set(false)" />
+  }
+</section>

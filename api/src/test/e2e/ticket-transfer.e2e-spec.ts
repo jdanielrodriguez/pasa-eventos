@@ -39,6 +39,9 @@ describe('Boletos: transferencia (e2e)', () => {
         slug: `xfer-${stamp}`,
         startsAt: new Date('2028-02-01T20:00:00-06:00'),
         endsAt: new Date('2028-02-01T23:00:00-06:00'),
+        // Publicado + fecha futura = ventas abiertas (el commit lo exige). Los asientos
+        // se crean por prisma directo, así que no choca con el guard de reconfiguración.
+        status: 'published',
       },
     });
     eventId = event.id;
@@ -57,7 +60,8 @@ describe('Boletos: transferencia (e2e)', () => {
     cId = (await mkUser('xferc')).id;
     cToken = await loginTrusted(`xferc_${stamp}@test.com`, 'xfer-C');
     const op = await mkUser('xferop', { roles: ['gate_operator'] });
-    void op;
+    // 8.1: el operador valida en puerta solo si está asignado al evento.
+    await prisma.gateAssignment.create({ data: { eventId, operatorId: op.id } });
     operatorToken = await loginTrusted(`xferop_${stamp}@test.com`, 'xfer-Op');
   });
 
@@ -96,6 +100,9 @@ describe('Boletos: transferencia (e2e)', () => {
     await prisma.webhookEvent.deleteMany({});
     await prisma.ledgerEntry.deleteMany({});
     await prisma.ledgerTransaction.deleteMany({});
+    // Borrar también las cuentas: dejarlas con su saldo cacheado (sin asientos) rompe
+    // el verifyChain GLOBAL de otras suites (balance ≠ suma de asientos).
+    await prisma.ledgerAccount.deleteMany({});
     await prisma.order.deleteMany({ where: { eventId } });
     await prisma.event.deleteMany({ where: { id: eventId } });
     await prisma.user.deleteMany({ where: { email: { contains: `_${stamp}@test.com` } } });

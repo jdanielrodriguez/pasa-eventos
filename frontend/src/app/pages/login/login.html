@@ -1,0 +1,74 @@
+<div class="auth-wrap">
+  <section class="auth-card">
+    <h1>{{ 'auth.loginTitle' | translate }}</h1>
+    <p class="auth-sub">{{ 'auth.loginSubtitle' | translate }}</p>
+
+    @if (error()) {
+      <p class="form-error" data-testid="login-error">{{ error() }}</p>
+    }
+
+    @if (!needs2fa()) {
+      <form (ngSubmit)="submit()">
+        <div class="field">
+          <label for="email">{{ 'auth.email' | translate }}</label>
+          <input
+            id="email"
+            type="email"
+            name="email"
+            autocomplete="email"
+            [attr.placeholder]="'auth.emailPlaceholder' | translate"
+            [ngModel]="email()"
+            (ngModelChange)="email.set($event)"
+            required
+          />
+        </div>
+
+        <div class="field">
+          <label for="password">{{ 'auth.password' | translate }}</label>
+          <input
+            id="password"
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            placeholder="••••••••"
+            [ngModel]="password()"
+            (ngModelChange)="password.set($event)"
+            required
+          />
+        </div>
+
+        <button type="submit" class="primary btn-block" [disabled]="submitting()">
+          {{ submitting() ? ('auth.signingIn' | translate) : ('auth.signIn' | translate) }}
+        </button>
+      </form>
+
+      <p class="auth-alt">
+        <a routerLink="/recuperar" data-testid="forgot-link">{{ 'auth.forgot' | translate }}</a>
+      </p>
+      <p class="auth-alt">{{ 'auth.noAccount' | translate }} <a routerLink="/registro">{{ 'auth.registerLink' | translate }}</a></p>
+    } @else {
+      <form (ngSubmit)="verify()">
+        <p class="auth-sub" data-testid="twofa-notice">
+          @if (method() === 'email') {
+            {{ 'auth.twofaEmail' | translate }}
+          } @else {
+            {{ 'auth.twofaApp' | translate }}
+          }
+        </p>
+        <div class="field">
+          <label id="code-label">{{ 'auth.code' | translate }}</label>
+          <app-otp-input
+            data-testid="code-input"
+            [length]="6"
+            [disabled]="submitting()"
+            [value]="code()"
+            (valueChange)="code.set($event)"
+          />
+        </div>
+        <button type="submit" class="primary btn-block" [disabled]="submitting()">
+          {{ submitting() ? ('auth.verifying' | translate) : ('auth.verify' | translate) }}
+        </button>
+      </form>
+    }
+  </section>
+</div>

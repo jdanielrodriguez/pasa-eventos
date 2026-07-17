@@ -1,0 +1,81 @@
+<header class="site-header">
+  <a class="brand" routerLink="/" [attr.aria-label]="'shell.brandHome' | translate">
+    <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="peGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+          <!-- Reactivo al tema: usa los tokens del primario (Pulso azul→magenta / Marquesina ámbar→coral). -->
+          <stop style="stop-color: var(--pe-primary)" />
+          <stop offset="1" style="stop-color: var(--pe-primary-2)" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M6 7h20a2 2 0 0 1 2 2v4a3 3 0 0 0 0 6v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4a3 3 0 0 0 0-6V9a2 2 0 0 1 2-2Z"
+        fill="url(#peGrad)"
+      />
+      <path d="M13 12.5 20 16l-7 3.5v-7Z" fill="#0b0c11" />
+    </svg>
+    <span><span class="brand-rest">bolet</span><span class="brand-em">iva</span></span>
+  </a>
+
+  <nav class="site-nav">
+    <a routerLink="/">{{ 'shell.navEvents' | translate }}</a>
+  </nav>
+
+  <div class="session-area" data-testid="session-area">
+    <app-theme-switcher />
+    <app-lang-switcher />
+    <!-- CTA "Conviértete en promotor": visitante Y cliente logueado; oculto a promotor/admin. -->
+    @if (!session.hasAnyRole(['promoter', 'admin'])) {
+      <a class="btn cta-promoter" routerLink="/conviertete-en-promotor" data-testid="become-promoter-link">{{
+        'shell.becomePromoter' | translate
+      }}</a>
+    }
+    @if (session.isAuthenticated()) {
+      <span class="greeting" data-testid="session-greeting">{{ 'shell.greeting' | translate: { name: session.user()?.firstName } }}</span>
+      <div class="user-menu">
+        <button
+          type="button"
+          class="user-trigger"
+          data-testid="user-menu-trigger"
+          [attr.aria-expanded]="menuOpen()"
+          aria-haspopup="menu"
+          [attr.aria-label]="'shell.accountMenu' | translate"
+          (click)="toggleMenu()"
+        >
+          @if (avatarUrl(); as url) {
+            <img class="user-avatar" [src]="url" alt="" data-testid="user-avatar" width="36" height="36" />
+          } @else {
+            <span class="user-avatar user-avatar-icon" data-testid="user-avatar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-3.6 3.6-6 8-6s8 2.4 8 6" stroke-linecap="round" />
+              </svg>
+            </span>
+          }
+        </button>
+        @if (menuOpen()) {
+          <div class="user-dropdown" data-testid="user-dropdown" role="menu">
+            <a routerLink="/cuenta" (click)="closeMenu()" data-testid="dd-perfil">{{ 'shell.profile' | translate }}</a>
+
+            <div class="dd-quick" [attr.aria-label]="'shell.quickAccess' | translate">
+              <a [routerLink]="['/cuenta']" [queryParams]="{ s: 'metodos' }" (click)="closeMenu()" data-testid="dd-metodos">{{ 'shell.paymentMethods' | translate }}</a>
+              <a [routerLink]="['/cuenta']" [queryParams]="{ s: 'activos' }" (click)="closeMenu()" data-testid="dd-boletos">{{ 'shell.tickets' | translate }}</a>
+              <a [routerLink]="['/cuenta']" [queryParams]="{ s: 'facturacion' }" (click)="closeMenu()" data-testid="dd-facturacion">{{ 'shell.billing' | translate }}</a>
+              <a [routerLink]="['/cuenta']" [queryParams]="{ s: 'wallet' }" (click)="closeMenu()" data-testid="dd-wallet">{{ 'shell.wallet' | translate }}</a>
+            </div>
+
+            @if (session.hasAnyRole(['promoter']) && !session.hasAnyRole(['admin'])) {
+              <a routerLink="/promotor" (click)="closeMenu()" data-testid="promoter-link">{{ 'shell.configuration' | translate }}</a>
+            }
+            @if (session.hasAnyRole(['admin'])) {
+              <a routerLink="/configuracion" (click)="closeMenu()" data-testid="config-link">{{ 'shell.configuration' | translate }}</a>
+            }
+            <button type="button" data-testid="logout-btn" (click)="logout()">{{ 'shell.logout' | translate }}</button>
+          </div>
+        }
+      </div>
+    } @else {
+      <a class="btn primary" routerLink="/login" data-testid="login-link">{{ 'shell.login' | translate }}</a>
+    }
+  </div>
+</header>

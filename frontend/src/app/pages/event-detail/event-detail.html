@@ -1,0 +1,91 @@
+@if (event(); as ev) {
+  <article class="event-detail">
+    <app-back-link link="/" [label]="'eventDetail.backToEvents' | translate" />
+    @if (coverImage(); as img) {
+      <img class="event-cover" [src]="img" [alt]="ev.name" />
+    }
+    <h1>{{ ev.name }}</h1>
+
+    <div class="event-meta">
+      @if (ev.category) {
+        <span class="event-cat">{{ ev.category.name }}</span>
+      }
+      <time [attr.datetime]="ev.startsAt">{{ ev.startsAt | localizedDate: 'full' }}</time>
+      @if (ev.address) {
+        <span class="event-place">{{ ev.address }}</span>
+      }
+    </div>
+
+    @if (ev.description) {
+      <p class="event-description">{{ ev.description }}</p>
+    }
+
+    @if (ev.status === 'cancelled') {
+      <p class="event-cancelled" data-testid="event-cancelled">{{ 'eventDetail.cancelled' | translate }}</p>
+    }
+
+    <section class="event-localities">
+      <h2>{{ 'eventDetail.localities' | translate }}</h2>
+      @if (!salesOpen()) {
+        <app-empty-state
+          variant="tickets"
+          data-testid="event-sales-closed"
+          [title]="'eventDetail.salesClosedTitle' | translate"
+          [subtitle]="'eventDetail.salesClosed' | translate"
+        />
+      } @else if (localities().length > 0) {
+        <ul class="locality-rows">
+          @for (loc of localities(); track loc.id) {
+            <li>
+              <a
+                class="locality-row"
+                data-testid="locality-row"
+                [routerLink]="['/eventos', ev.slug, 'comprar']"
+                [queryParams]="{ loc: loc.id }"
+              >
+                <div class="locality-thumb" aria-hidden="true">
+                  @if (coverImage(); as img) {
+                    <img [src]="img" [alt]="loc.name" />
+                  } @else {
+                    <span>{{ loc.name.charAt(0) }}</span>
+                  }
+                </div>
+                <div class="locality-info">
+                  <strong>{{ loc.name }}</strong>
+                  <span class="locality-sub">
+                    {{ loc.kind === 'general' ? ('eventDetail.general' | translate) : ('eventDetail.seated' | translate) }}
+                    · {{ 'eventDetail.available' | translate: { count: loc.available } }}
+                  </span>
+                </div>
+                <div class="locality-price">
+                  @if (loc.price) {
+                    <span class="price-amount">Q{{ loc.price.total }}</span>
+                    <span class="price-label">{{ 'eventDetail.perTicket' | translate }}</span>
+                  } @else {
+                    <span class="price-label">{{ 'eventDetail.priceTbd' | translate }}</span>
+                  }
+                </div>
+                <span class="locality-go" aria-hidden="true">›</span>
+              </a>
+            </li>
+          }
+        </ul>
+      } @else {
+        <app-empty-state
+          variant="tickets"
+          data-testid="event-no-localities"
+          [title]="'eventDetail.noLocalities' | translate"
+          [subtitle]="'eventDetail.noLocalitiesHint' | translate"
+        />
+      }
+    </section>
+  </article>
+} @else if (loading()) {
+  <app-loading variant="skeleton" data-testid="event-loading" [label]="'eventDetail.loading' | translate" />
+} @else {
+  <section class="event-notfound" data-testid="event-notfound">
+    <h1>{{ 'eventDetail.notFoundTitle' | translate }}</h1>
+    <p>{{ 'eventDetail.notFoundBody' | translate }}</p>
+    <a routerLink="/">{{ 'eventDetail.seeAll' | translate }}</a>
+  </section>
+}

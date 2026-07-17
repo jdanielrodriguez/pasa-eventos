@@ -11,11 +11,23 @@ services:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
+      # Anti-abuso de reservas anónimas ON (feature). En prod el cooldown es 1 h;
+      # en local lo bajamos a 2 min para poder probarlo sin esperar tanto.
+      - RESERVATION_ANON_LIMIT=true
+      - RESERVATION_ANON_COOLDOWN_SECONDS=120
     ports:
       - '8080:8080'
+    # Instala dependencias en CADA arranque (capta cambios de package.json) antes de
+    # levantar la API. node_modules es un volumen NOMBRADO → persiste entre make
+    # down/start, así el install es incremental (rápido) y no se pierde como antes.
+    command: >
+      sh -c "npm install --legacy-peer-deps &&
+             npx prisma generate &&
+             npx prisma db push --skip-generate --accept-data-loss &&
+             npx nx serve api"
     volumes:
       - ./:/app
-      - /app/node_modules
+      - pasaeventos_api_node_modules:/app/node_modules
     depends_on:
       pasaeventos_db:
         condition: service_healthy
@@ -52,6 +64,40 @@ services:
     networks:
       pasaeventos_network:
         ipv4_address: 172.16.0.4
+
+  # Frontend Angular 20 SSR (PWA). Parte del monorepo: `make start` levanta
+  # backend + frontend con un solo comando. En SSR (Node dentro del contenedor)
+  # el API se resuelve por la red Docker (pasaeventos_api); en el navegador,
+  # por localhost:8080 (host). Ver core/config del frontend (isPlatformServer).
+  pasaeventos_frontend:
+    container_name: pasaeventos_frontend
+    build:
+      context: .
+      dockerfile: ./docker/angular/Dockerfile
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      # SSR → API por la red interna; navegador → API por el host.
+      - API_URL_SERVER=http://pasaeventos_api:8080/api/v1
+      - API_URL_BROWSER=http://localhost:8080/api/v1
+    ports:
+      - '4200:4200'
+    # Instala dependencias en CADA arranque (capta cambios de package.json) antes de
+    # ng serve. node_modules es un volumen NOMBRADO → persiste e install incremental.
+    command: >
+      sh -c "npm install --legacy-peer-deps && npm run dev"
+    volumes:
+      - ./frontend:/app
+      - pasaeventos_frontend_node_modules:/app/node_modules
+      # Spec OpenAPI del backend (solo lectura) para regenerar el SDK tipado.
+      - ./docs:/docs:ro
+    depends_on:
+      pasaeventos_api:
+        condition: service_started
+    networks:
+      pasaeventos_network:
+        ipv4_address: 172.16.0.12
 
   pasaeventos_adminer:
     image: adminer:latest
@@ -159,6 +205,10 @@ volumes:
     external: true
   pasaeventos_localstack_data:
     external: true
+  # node_modules gestionados por compose (NO external): persisten entre make down/start
+  # y el install-on-start los mantiene al día. `make rebuild` los renueva si hace falta.
+  pasaeventos_api_node_modules:
+  pasaeventos_frontend_node_modules:
 
 networks:
   pasaeventos_network:

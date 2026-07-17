@@ -9,6 +9,8 @@ const TTL_MS: Record<ChallengePurpose, number> = {
   email_verify: 24 * 60 * 60 * 1000, // 24 h
   passwordless: 15 * 60 * 1000, // 15 min
   twofa_email: 10 * 60 * 1000, // 10 min
+  gateway_unlock: 10 * 60 * 1000, // 10 min (desbloqueo para agregar pasarela)
+  event_edit_unlock: 10 * 60 * 1000, // 10 min (OTP para desbloquear edición de evento, admin)
 };
 const MAX_ATTEMPTS = 5;
 
@@ -105,29 +107,46 @@ export class ChallengesService {
     const origin = this.origin();
     const templates: Record<ChallengePurpose, { subject: string; intro: string; path: string }> = {
       email_verify: {
-        subject: 'Verifica tu correo — Pasa Eventos',
+        subject: 'Verifica tu correo — Boletiva',
         intro: 'Verifica tu correo para activar tu cuenta.',
         path: '/verify-email',
       },
       passwordless: {
-        subject: 'Tu enlace de acceso — Pasa Eventos',
+        subject: 'Tu enlace de acceso — Boletiva',
         intro: 'Usa este enlace o código para iniciar sesión.',
         path: '/passwordless',
       },
       twofa_email: {
-        subject: 'Tu código de verificación — Pasa Eventos',
+        subject: 'Tu código de verificación — Boletiva',
         intro: 'Código de verificación en dos pasos.',
         path: '/2fa',
+      },
+      gateway_unlock: {
+        subject: 'Código para agregar una pasarela — Boletiva',
+        intro: 'Confirma que autorizas agregar una nueva pasarela de pago.',
+        path: '/configuracion',
+      },
+      event_edit_unlock: {
+        subject: 'Código para editar un evento — Boletiva',
+        intro: 'Confirma que autorizas editar este evento como administrador.',
+        path: '/admin/eventos',
       },
     };
     const t = templates[purpose];
     const link = token ? `${origin}${t.path}?token=${token}` : '';
-    const html = `
-      <p>${t.intro}</p>
-      <p>Tu código: <b style="font-size:20px;letter-spacing:3px">${code}</b> (válido por poco tiempo).</p>
-      ${link ? `<p>O haz clic: <a href="${link}">Continuar</a></p>` : ''}`;
+    const bodyHtml = `
+      <p style="margin:0 0 14px 0;">${t.intro}</p>
+      <p style="margin:0 0 6px 0;">Tu código de verificación:</p>
+      <p style="margin:0;font-size:30px;font-weight:700;letter-spacing:8px;color:#7c3aed;">${code}</p>
+      <p class="pe-muted" style="margin:14px 0 0 0;font-size:14px;color:#6b6b76;">Válido por poco tiempo. Si no lo solicitaste, ignora este correo.</p>`;
     try {
-      await this.mail.send({ to: email, subject: t.subject, html });
+      await this.mail.sendTemplated(email, t.subject, {
+        title: t.subject.replace(' — Boletiva', ''),
+        preheader: t.intro,
+        bodyHtml,
+        bodyText: `${t.intro}\nTu código: ${code} (válido por poco tiempo).`,
+        cta: link ? { url: link, label: 'Continuar' } : undefined,
+      });
     } catch (err) {
       this.logger.warn(`No se pudo enviar (${purpose}) a ${email}: ${(err as Error).message}`);
     }

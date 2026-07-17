@@ -1,0 +1,21 @@
+/** Catálogo de eventos (inicio) y slider de destacados. Español. */
+export const catalog = {
+  title: 'Eventos',
+  searchPlaceholder: 'Buscar eventos…',
+  searchAria: 'Buscar eventos',
+  searchButton: 'Buscar',
+  filterByCategory: 'Filtrar por categoría',
+  allCategories: 'Todas',
+  loadError: 'No se pudo cargar el catálogo. Intenta de nuevo.',
+  loadErrorHint: 'Revisa tu conexión y vuelve a intentarlo en unos segundos.',
+  empty: 'Aún no hay eventos publicados.',
+  emptyHint: 'Vuelve pronto: los nuevos eventos aparecerán aquí.',
+  noResults: 'Sin resultados',
+  noResultsHint: 'Ningún evento coincide con tu búsqueda o filtro. Prueba con otros términos.',
+  count: '{{count}} evento(s)',
+  heroAria: 'Eventos destacados',
+  heroCarousel: 'carrusel',
+  heroPrev: 'Anterior',
+  heroNext: 'Siguiente',
+  heroGoTo: 'Ir al evento {{n}}',
+};

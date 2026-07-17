@@ -35,6 +35,7 @@ enum UserStatus {
 enum EventStatus {
   draft
   published
+  suspended // despublicado para reconfigurarse (cambio de salón/plantilla); re-publicable
   cancelled
   finished
 }
@@ -66,6 +67,29 @@ enum ChallengePurpose {
   email_verify // verificar el correo
   passwordless // inicio de sesión sin contraseña (magic link + código)
   twofa_email // segundo factor por correo
+  gateway_unlock // desbloqueo por OTP para agregar una pasarela (acción sensible, admin)
+  event_edit_unlock // desbloqueo por OTP para que un ADMIN edite un evento ajeno (token 5 min)
+}
+
+/// Tipo/preset de una plantilla de disposición de asientos (v3.5). Los cuatro
+/// primeros replican las plantillas built-in del editor; `custom` = creada por admin.
+enum SeatTemplateKind {
+  rows // filas rectas
+  theater // filas curvadas hacia el escenario
+  stadium // gradas en los cuatro lados de la cancha
+  tables // mesas redondas
+  grid // cuadrícula genérica
+  curve // línea/arco curvo
+  line // línea recta
+  custom // definida a mano
+}
+
+/// Estado de publicación de contenido gestionable por admin (salones, plantillas
+/// de asientos, v3.7): `draft` = solo lo ve el admin en su consola; `published` =
+/// visible para el promotor (selector de salón / desplegable de plantillas).
+enum ContentStatus {
+  draft
+  published
 }
 
 /// Estado de un intento de pago.
@@ -148,6 +172,21 @@ enum PromoterStatus {
   suspended // autorización revocada por el admin
 }
 
+/// Plan del promotor (pantalla de pricing). `free` = plan actual con límites; `premium`
+/// = acceso a todo. El enforcement fino de límites por plan es incremental por feature.
+enum PromoterTier {
+  free
+  premium
+}
+
+/// Estado de una invitación de promotor por token (Ola F4).
+enum PromoterInvitationStatus {
+  pending // enviada; el token sigue vigente
+  accepted // el destinatario se registró y quedó auto-aprobado
+  revoked // cancelada por quien invitó
+  expired // venció sin usarse
+}
+
 /// Estado de una orden de compra.
 enum OrderStatus {
   pending // creada; asientos ya reservados (sold) a la espera de pago
@@ -188,6 +227,21 @@ model User {
   status       UserStatus @default(active)
   roles        Role[]     @default([buyer])
 
+  // Preferencia de idioma del usuario (v3.7): 'es' | 'en'. Se persiste desde el
+  // perfil y se aplica en el frontend por encima de la preferencia de localStorage.
+  language     String     @default("es")
+
+  // Preferencia de FRANJA de tema del usuario (rebranding Boletiva): 'dia' | 'noche'
+  // | null (null = usa la franja por defecto de la plataforma). El tema concreto lo
+  // resuelve la asignación admin franja→tema. Solo aplica si el admin permite el switch.
+  themePref    String?    @map("theme_pref")
+
+  // Foto de perfil (opcional). Se guarda la KEY del objeto en storage (patrón
+  // event-media: firmar al leer); `avatarUrl` de las respuestas se firma en caliente
+  // con `StorageService.signedGetUrl`. `avatarUrl` (columna) queda para URLs externas
+  // heredadas / Google; si hay `avatarKey` tiene prioridad.
+  avatarKey    String?    @map("avatar_key")
+
   // Verificación de correo (null = no verificado).
   emailVerifiedAt DateTime? @map("email_verified_at")
 
@@ -204,9 +258,30 @@ model User {
   // Autorización como promotor (Ola 4). Un usuario puede solicitar ser promotor;
   // un admin lo aprueba antes de que pueda operar (salvo en modo pruebas).
   promoterStatus    PromoterStatus @default(none) @map("promoter_status")
+  promoterTier      PromoterTier   @default(free) @map("promoter_tier")
   promoterAppliedAt DateTime?      @map("promoter_applied_at")
   promoterDecidedAt DateTime?      @map("promoter_decided_at")
   promoterNote      String?        @map("promoter_note") // motivo de rechazo/suspensión
+  // Nota interna del admin sobre el promotor (v3.8). Persistente e independiente
+  // de `promoterNote` (que es el motivo de la última decisión y se limpia al
+  // aprobar). Solo la ve/edita el admin en la consola; no se muestra al promotor.
+  promoterInternalNote String? @map("promoter_internal_note")
+
+  // Usuario de PRUEBA (v3.2): promotores invitados marcados como test no pueden
+  // usar pasarelas reales (anclados a Sandbox) para no contaminar métricas de prod.
+  isTestUser Boolean @default(false) @map("is_test_user")
+
+  // Datos de FACTURACIÓN del usuario (FEL). `nit` se prellena en el checkout y es
+  // necesario para facturar (si se borra, el frontend avisa). `billingName` es el
+  // nombre fiscal (idealmente autocompletado por el NIT). `dpi` es OPCIONAL.
+  // El NIT por defecto para consumidor final es 'CF' (se aplica en el checkout si falta).
+  nit         String? @map("nit")
+  billingName String? @map("billing_name")
+  dpi         String? @map("dpi")
+
+  // Onboarding: tours (por página) que el usuario ya completó o saltó. Si la clave del
+  // tour NO está aquí, se le muestra; al completar/skipear se agrega y deja de mostrarse.
+  toursSeen   String[] @default([]) @map("tours_seen")
 
   // Privacidad/retención (Ola 6): sello de anonimización (seudonimización de PII
   // preservando el ledger). null = datos personales intactos.
@@ -217,6 +292,8 @@ model User {
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   events        Event[]            @relation("EventPromoter")
+  // Eventos creados por este usuario (admin) a nombre de otro promotor (v3.8).
+  eventsCreatedAsAdmin Event[]     @relation("EventCreatedByAdmin")
   refreshTokens RefreshToken[]
   recoveries    PasswordRecovery[]
   categories    Category[]
@@ -227,9 +304,31 @@ model User {
   tickets       Ticket[]           @relation("TicketOwner")
   withdrawals   WalletWithdrawal[]
   gateAssignments GateAssignment[] @relation("GateOperator")
+  promoterInvitations PromoterInvitation[] @relation("InvitedBy")
+  savedCards SavedCard[]
 
   @@index([status])
   @@map("users")
+}
+
+/// Tarjetas guardadas (métodos de pago) tokenizadas (PCI-DSS). NUNCA se guarda el
+/// PAN: la pasarela tokeniza en sus servidores y aquí solo persistimos el TOKEN
+/// opaco reutilizable + la marca y los últimos 4 dígitos (no sensibles) para mostrar.
+model SavedCard {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  brand     String // visa, mastercard, amex, ...
+  last4     String   @db.VarChar(4)
+  /// Token opaco devuelto por el tokenizador (referencia, no la tarjeta).
+  token     String
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("saved_cards")
 }
 
 /// Refresh tokens con rotación y detección de reuso (por "family").
@@ -363,6 +462,16 @@ model Event {
   frozenGatewayId String?  @map("frozen_gateway_id") @db.Uuid
   ivaOnNet        Boolean  @default(true) @map("iva_on_net")
 
+  // Auditoría (v3.8): admin que creó el evento A NOMBRE de un promotor. null = lo
+  // creó el propio promotor. El evento SIEMPRE pertenece al promotor (`promoterId`);
+  // este campo solo deja rastro de quién lo originó desde la consola admin.
+  createdByAdminId String? @map("created_by_admin_id") @db.Uuid
+
+  // Salón/venue reutilizable (v3.5). Opcional: el promotor puede elegir un salón
+  // pre-registrado (con dirección/coordenadas y layout de asientos) o escribir la
+  // dirección a mano. Al asignarlo se pueden prefijar address/lat/lng si van vacíos.
+  hallId String? @map("hall_id") @db.Uuid
+
   // Cuotas (Ola 6.5): si el promotor ABSORBE el recargo por pago en cuotas
   // (descontándolo de su neto en el ledger) en lugar de pasárselo al comprador.
   // false (default) = el recargo lo paga el comprador (gross-up mayor).
@@ -372,11 +481,22 @@ model Event {
   // global (setting `transfer.max_per_ticket_default`).
   maxTransfers Int? @map("max_transfers")
 
+  // Destacado editable (slider "hero" del inicio). null = no promocionado; un
+  // entero define el ORDEN de prioridad (menor = primero). Lo edita admin/promotor.
+  promotedPriority Int? @map("promoted_priority")
+
+  // v3.10: sello de "cierre de caja" — cuándo un ADMIN finalizó el evento y
+  // transfirió el saldo (neto acumulado) al wallet del promotor. Idempotencia:
+  // con esto puesto, la transferencia no se repite.
+  cashTransferredAt DateTime? @map("cash_transferred_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   promoter   User        @relation("EventPromoter", fields: [promoterId], references: [id])
+  createdByAdmin User?   @relation("EventCreatedByAdmin", fields: [createdByAdminId], references: [id], onDelete: SetNull)
   category   Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  hall       Hall?       @relation(fields: [hallId], references: [id], onDelete: SetNull)
   gateAssignments GateAssignment[]
   localities Locality[]
   media      EventMedia[]
@@ -424,6 +544,7 @@ model Locality {
   event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   seats      Seat[]
   orderItems OrderItem[]
+  tickets    Ticket[]
 
   @@unique([eventId, slug])
   @@index([eventId])
@@ -605,6 +726,14 @@ model PaymentGateway {
   /// Cargo FIJO por transacción en cuotas (GTQ, p.ej. Q2 de Recurrente). Se suma
   /// al costo que absorbe la plataforma/promotor. null/0 = sin fijo.
   installmentFixedFee Decimal?   @map("installment_fixed_fee") @db.Decimal(12, 2)
+  /// Ola 6.6: cargo FIJO por transacción que aplica a TODO cobro (pago único y
+  /// cuotas). Se grossea como el %; el comprador lo paga por boleto y al combinar
+  /// N boletos en 1 transacción la plataforma captura (N-1)·fijo. Pagalo = 0.
+  transactionFixedFee Decimal   @default(0) @map("transaction_fixed_fee") @db.Decimal(12, 2)
+  /// Ola 6.6: % MÍNIMO de cost-share del promotor para poder USAR esta pasarela
+  /// (0 = disponible para todos; p.ej. PayPal 0.50). La pasarela default del
+  /// sistema ignora este umbral (siempre vendible).
+  minCostSharePct  Decimal       @default(0) @map("min_cost_share_pct") @db.Decimal(6, 5)
   credentialsRef   String?       @map("credentials_ref")
   status           GatewayStatus @default(active)
   isPlatformDefault Boolean      @default(false) @map("is_platform_default")
@@ -765,6 +894,7 @@ model Ticket {
   event     Event                @relation(fields: [eventId], references: [id])
   owner     User                 @relation("TicketOwner", fields: [ownerId], references: [id])
   seat      Seat?                @relation(fields: [seatId], references: [id])
+  locality  Locality             @relation(fields: [localityId], references: [id])
   custody   TicketCustodyEvent[]
   transfers TicketTransfer[]
 
@@ -898,4 +1028,133 @@ model GateAssignment {
   @@unique([eventId, operatorId])
   @@index([operatorId])
   @@map("gate_assignments")
+}
+
+/// Invitación de promotor por token (Ola F4). Un admin o promotor aprobado invita
+/// por correo; el destinatario abre la URL con el token, se registra con el email
+/// precargado y queda AUTO-APROBADO como promotor (se salta la autorización). El
+/// token se guarda hasheado (solo se muestra una vez en la URL).
+model PromoterInvitation {
+  id               String                   @id @default(uuid()) @db.Uuid
+  email            String
+  tokenHash        String                   @unique @map("token_hash")
+  status           PromoterInvitationStatus @default(pending)
+  /// Marca al invitado como usuario de PRUEBA: al aceptar, su User queda con
+  /// isTestUser=true (anclado a Sandbox, no usa pasarelas reales).
+  isTestUser       Boolean                  @default(false) @map("is_test_user")
+  invitedById      String                   @map("invited_by_id") @db.Uuid
+  acceptedByUserId String?                  @map("accepted_by_user_id") @db.Uuid
+  expiresAt        DateTime                 @map("expires_at")
+  acceptedAt       DateTime?                @map("accepted_at")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
+
+  invitedBy User @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([invitedById])
+  @@map("promoter_invitations")
+}
+
+/// Historial APPEND-ONLY de transiciones de estado de un promotor (v3.2). El
+/// estado actual sigue en User.promoterStatus; cada cambio (approve/reject/
+/// suspend/reactivar) se audita aquí con quién lo hizo y el motivo. Nunca se edita.
+model PromoterStatusEvent {
+  id         String         @id @default(uuid()) @db.Uuid
+  promoterId String         @map("promoter_id") @db.Uuid
+  adminId    String?        @map("admin_id") @db.Uuid // quién ejecutó (null = sistema)
+  statusFrom PromoterStatus @map("status_from")
+  statusTo   PromoterStatus @map("status_to")
+  reason     String?
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  @@index([promoterId])
+  @@map("promoter_status_events")
+}
+
+// ---------------------------------------------------------------------------
+// Salones y plantillas de asientos (v3.5)
+// ---------------------------------------------------------------------------
+
+/// Salón/venue reutilizable. Un admin lo gestiona; cualquier promotor lo elige al
+/// crear un evento para prefijar dirección/coordenadas y, opcionalmente, arrancar
+/// con un layout de asientos (`seatTemplateId`). No se materializan asientos aquí:
+/// solo referencia la geometría base que el editor del evento puede aplicar.
+model Hall {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  address        String?
+  lat            Float?
+  lng            Float?
+  city           String?
+  notes          String?
+  seatTemplateId String?  @map("seat_template_id") @db.Uuid
+  /// v3.7: draft (solo admin) | published (visible en el selector del promotor).
+  status         ContentStatus @default(draft)
+  /// v3.10: oculto del selector del promotor sin eliminarlo (reversible).
+  hidden         Boolean  @default(false)
+  /// v3.10: deshabilitado (prerequisito para poder ELIMINARlo). No sale al promotor.
+  disabled       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  seatTemplate SeatTemplate? @relation(fields: [seatTemplateId], references: [id], onDelete: SetNull)
+  events       Event[]
+
+  @@index([name])
+  @@index([status])
+  @@map("halls")
+}
+
+/// Plantilla de disposición de asientos (v3.5). Registra los presets del editor
+/// (built-in) y las plantillas que el admin cree a mano. `layoutJson` guarda la
+/// metadata de presentación (icono/hint) o la geometría; `params` los parámetros
+/// de generación (filas, columnas, radio, etc.). Built-in = no borrable/editable.
+model SeatTemplate {
+  id         String           @id @default(uuid()) @db.Uuid
+  name       String
+  kind       SeatTemplateKind @default(custom)
+  layoutJson Json             @default("{}") @map("layout_json")
+  params     Json?
+  isBuiltIn  Boolean          @default(false) @map("is_built_in")
+  /// v3.7: draft (solo admin) | published (visible en el desplegable del editor).
+  status     ContentStatus    @default(draft)
+  /// v3.7: oculta del desplegable del promotor sin eliminarla (reversible).
+  hidden     Boolean          @default(false)
+  /// v3.7: deshabilitada (prerequisito para poder ELIMINARla). No sale al promotor.
+  disabled   Boolean          @default(false)
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  halls Hall[]
+
+  @@index([kind])
+  @@index([status])
+  @@map("seat_templates")
+}
+
+/// Bitácora de auditoría (v3.8, no-repudio). Registro APPEND-ONLY encadenado por
+/// hash (misma técnica que el ledger/custody: `prevHash` + `hash=sha256(prevHash+
+/// contenido)` + `seq` monótono) de acciones sensibles y de CADA click de
+/// confirmación del frontend. Captura contexto server-side (IP y user-agent del
+/// request, NO del body) para justificar "usted dio click en confirmar". El
+/// `userId` se guarda como texto plano SIN FK: la anonimización de un usuario NO
+/// debe borrar ni romper su rastro de auditoría (trazabilidad intacta).
+model AuditEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  seq       BigInt   @default(autoincrement())
+  userId    String?  @map("user_id")
+  action    String
+  resource  String?
+  ip        String?
+  userAgent String?  @map("user_agent")
+  payload   Json?
+  prevHash  String   @map("prev_hash")
+  hash      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt, id])
+  @@map("audit_events")
 }

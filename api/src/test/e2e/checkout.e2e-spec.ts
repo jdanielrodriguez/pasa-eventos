@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { BadRequestException, INestApplication, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import request from 'supertest';
 import Decimal from 'decimal.js';
@@ -7,6 +7,7 @@ import { RedisService } from '../../infra/redis/redis.service';
 import { CheckoutService } from '../../modules/orders/checkout.service';
 import { createTestApp, SEED } from './utils';
 import { sha256 } from '../../common/utils/crypto';
+import { CANON } from './canon';
 
 /** Normaliza dinero a 2 decimales (Prisma serializa Decimal sin ceros de relleno). */
 const money = (v: unknown): string => new Decimal(v as string).toFixed(2);
@@ -140,18 +141,18 @@ describe('Checkout / commit de compra (e2e)', () => {
     expect(res.body.currency).toBe('GTQ');
     // Dinero server-authoritative: neto 100 con comisiones por defecto → 129.68.
     expect(money(res.body.net)).toBe('100.00');
-    expect(money(res.body.platformFee)).toBe('10.00');
-    expect(money(res.body.taxableBase)).toBe('110.00');
-    expect(money(res.body.iva)).toBe('13.20');
-    expect(money(res.body.gatewayFee)).toBe('6.48');
-    expect(money(res.body.total)).toBe('129.68');
+    expect(money(res.body.platformFee)).toBe(CANON.platformFee);
+    expect(money(res.body.taxableBase)).toBe(CANON.taxableBase);
+    expect(money(res.body.iva)).toBe(CANON.iva);
+    expect(money(res.body.gatewayFee)).toBe(CANON.gatewayFee);
+    expect(money(res.body.total)).toBe(CANON.total);
     expect(res.body.expiresAt).toBeDefined();
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0].seatId).toBe(seat);
     expect(res.body.items[0].quoteHash).toBeTruthy();
     // El snapshot inmutable del quote conserva el formato exacto del PricingEngine.
     expect(res.body.items[0].quote.net).toBe('100.00');
-    expect(res.body.items[0].quote.total).toBe('129.68');
+    expect(res.body.items[0].quote.total).toBe(CANON.total);
     expect(res.body.items[0].quote.hash).toBe(res.body.items[0].quoteHash);
 
     const dbSeat = await prisma.seat.findUniqueOrThrow({ where: { id: seat } });
@@ -163,9 +164,9 @@ describe('Checkout / commit de compra (e2e)', () => {
     const res = await buy(tokenA, ids).expect(201);
     expect(res.body.items).toHaveLength(2);
     expect(money(res.body.net)).toBe('200.00');
-    expect(money(res.body.iva)).toBe('26.40');
-    expect(money(res.body.gatewayFee)).toBe('12.96');
-    expect(money(res.body.total)).toBe('259.36'); // 2 * 129.68
+    expect(money(res.body.iva)).toBe(CANON.mul(CANON.iva, 2));
+    expect(money(res.body.gatewayFee)).toBe(CANON.mul(CANON.gatewayFee, 2));
+    expect(money(res.body.total)).toBe(CANON.x(2)); // 2 boletos
   });
 
   it('asiento ya vendido → 409', async () => {
@@ -350,4 +351,31 @@ describe('Checkout / commit de compra (e2e)', () => {
     release();
     await holding;
   }, 15000);
+
+  // ---- Guards del commit ejercidos por el servicio (no alcanzables por HTTP) ----
+
+  it('commit directo con seatIds vacío → 400 (el guard vive en el servicio)', async () => {
+    await expect(checkout.commit(eventId, [], buyerAId)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('commit directo con evento inexistente → 400', async () => {
+    await expect(
+      checkout.commit('00000000-0000-4000-8000-000000000000', [seatIds[30]], buyerAId),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('commit de asiento cuya localidad no tiene precio (desiredNet null) → 422', async () => {
+    const loc = await prisma.locality.create({
+      data: { eventId, name: 'CO Sin Precio', slug: `co-noprice-${Date.now()}`, kind: 'seated' },
+    });
+    const seat = await prisma.seat.create({
+      data: { localityId: loc.id, label: `NP-${Date.now()}`, status: 'available' },
+    });
+    await expect(checkout.commit(eventId, [seat.id], buyerAId)).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+    // El asiento NO se vendió (la tx hizo rollback).
+    const after = await prisma.seat.findUniqueOrThrow({ where: { id: seat.id } });
+    expect(after.status).toBe('available');
+  });
 });

@@ -11,6 +11,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { assertProductionSecurity } from './common/security/assert-prod-security';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -20,7 +21,21 @@ async function bootstrap(): Promise<void> {
   // Logger estructurado (pino) como logger de Nest.
   app.useLogger(app.get(Logger));
 
+  // Fail-fast en PROD: secretos con default de dev, trust proxy mal parametrizado o
+  // CORS '*' con credenciales → aborta el arranque (auditoría dual C1/C2/M5).
+  assertProductionSecurity(config);
+
   // Seguridad y transporte.
+  // Ocultar la tecnología (v3.8): quitar el fingerprint `X-Powered-By: Express`
+  // (helmet ya lo hace por defecto; explícito aquí como defensa en profundidad para
+  // no regalar a un atacante el mapa exacto de versiones/CVEs). helmet añade además
+  // CSP, HSTS, X-Frame-Options, nosniff, etc. La CSP por defecto convive con Swagger.
+  app.getHttpAdapter().getInstance().disable('x-powered-by');
+  // `trust proxy`: hace que Express resuelva `req.ip` a la IP REAL del cliente detrás
+  // de los proxies de GCP (Cloud Run/LB) en vez del último hop, y — configurado al
+  // número correcto de proxies — evita que un cliente falsee su IP metiendo entradas
+  // en X-Forwarded-For (base del rate-limit y del anti-abuso de reservas por IP).
+  app.getHttpAdapter().getInstance().set('trust proxy', config.get('security.trustProxy') ?? false);
   app.use(helmet());
   app.use(compression());
   app.enableCors({
@@ -52,8 +67,8 @@ async function bootstrap(): Promise<void> {
   // Swagger (no en prod).
   if (!isProd && process.env.DISABLE_SWAGGER !== 'true') {
     const doc = new DocumentBuilder()
-      .setTitle('Pasa Eventos API')
-      .setDescription('API de la boletera Pasa Eventos')
+      .setTitle('Boletiva API')
+      .setDescription('API de la boletera Boletiva')
       .setVersion('1.0')
       .addBearerAuth()
       .build();

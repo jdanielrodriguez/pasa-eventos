@@ -1,0 +1,261 @@
+<section class="checkout">
+  <h1>{{ 'checkout.title' | translate }}</h1>
+
+  @if (order(); as ord) {
+    @if (status() === 'paid') {
+      <app-confirmation-splash
+        data-testid="status-paid"
+        icon="check"
+        [title]="'checkout.paidTitle' | translate"
+        [message]="'checkout.paidBody' | translate"
+        [redirectLabel]="'checkout.redirectingToTickets' | translate"
+      >
+        <a class="btn primary" [routerLink]="['/cuenta']" [queryParams]="{ s: 'activos', order: orderId() }" data-testid="go-to-tickets">
+          {{ 'checkout.goToTicketsNow' | translate }}
+        </a>
+      </app-confirmation-splash>
+    } @else if (status() === 'cancelled' || status() === 'expired') {
+      <div class="failed" data-testid="status-failed">
+        <h2>{{ 'checkout.failedTitle' | translate }}</h2>
+        <p>{{ 'checkout.orderWas' | translate: { state: (status() === 'expired' ? ('checkout.expired' | translate) : ('checkout.cancelled' | translate)) } }}</p>
+      </div>
+    } @else {
+      @if (processing()) {
+        <app-loading
+          [fullscreen]="true"
+          [dim]="true"
+          [label]="'checkout.confirming' | translate"
+          data-testid="checkout-confirming"
+        />
+      }
+      <div class="checkout-grid">
+        <div class="checkout-main">
+          <!-- MÉTODO DE PAGO: cómo paga el comprador -->
+          <section class="pay-section">
+            <h2>{{ 'checkout.paymentMethod' | translate }}</h2>
+
+            @if (isTestUser()) {
+              <p class="test-card-hint" data-testid="test-card-hint">🧪 {{ 'checkout.testCardHint' | translate }}</p>
+            }
+
+            @if (methodsLoading()) {
+              <p class="muted" data-testid="methods-loading">{{ 'checkout.loadingMethods' | translate }}</p>
+            } @else {
+              @if (methodsError()) {
+                <p class="hint" data-testid="methods-error">{{ 'checkout.methodsError' | translate }}</p>
+              }
+
+              <div class="pay-options" role="radiogroup" [attr.aria-label]="'checkout.paymentMethod' | translate">
+                <!-- Saldo (wallet) -->
+                @if (hasWalletFunds()) {
+                  <button
+                    type="button"
+                    class="pay-option"
+                    role="radio"
+                    data-testid="pay-wallet"
+                    [attr.aria-checked]="payMode() === 'wallet'"
+                    [class.selected]="payMode() === 'wallet'"
+                    (click)="setPayMode('wallet')"
+                  >
+                    <span class="radio-dot" aria-hidden="true"></span>
+                    <span class="pay-option-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16 14h2" stroke-linecap="round"/></svg>
+                    </span>
+                    <span class="pay-option-body">
+                      <strong>{{ 'checkout.payWithWallet' | translate }}</strong>
+                      <span class="method-sub" data-testid="wallet-balance">{{ 'checkout.walletBalance' | translate: { amount: (wallet()?.balance | money) } }}</span>
+                    </span>
+                  </button>
+                }
+
+                <!-- Tarjetas guardadas -->
+                @for (c of savedMethods(); track c.id) {
+                  <button
+                    type="button"
+                    class="pay-option"
+                    role="radio"
+                    data-testid="pay-saved-card"
+                    [attr.aria-checked]="payMode() === 'saved' && selectedCardId() === c.id"
+                    [class.selected]="payMode() === 'saved' && selectedCardId() === c.id"
+                    (click)="selectCard(c.id)"
+                  >
+                    <span class="radio-dot" aria-hidden="true"></span>
+                    <span class="pay-option-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19" stroke-width="2.4"/></svg>
+                    </span>
+                    <span class="pay-option-body">
+                      <strong>{{ c.brand | uppercase }} •••• {{ c.last4 }}</strong>
+                      @if (c.isDefault) { <span class="method-sub">{{ 'account.methods.default' | translate }}</span> }
+                    </span>
+                  </button>
+                }
+
+                <!-- Nueva tarjeta (siempre disponible como opción) -->
+                @if (hasSavedMethods()) {
+                  <button
+                    type="button"
+                    class="pay-option"
+                    role="radio"
+                    data-testid="pay-new-card"
+                    [attr.aria-checked]="payMode() === 'new'"
+                    [class.selected]="payMode() === 'new'"
+                    (click)="setPayMode('new')"
+                  >
+                    <span class="radio-dot" aria-hidden="true"></span>
+                    <span class="pay-option-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
+                    </span>
+                    <span class="pay-option-body">
+                      <strong>{{ 'checkout.useAnotherCard' | translate }}</strong>
+                    </span>
+                  </button>
+                }
+              </div>
+
+              <!-- CVV requerido al usar una tarjeta guardada -->
+              @if (payMode() === 'saved') {
+                <div class="cvv-block" data-testid="cvv-block">
+                  <div class="field cvv-field">
+                    <label for="saved-cvv">{{ 'checkout.enterCvv' | translate }}</label>
+                    <input
+                      id="saved-cvv"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="cc-csc"
+                      [attr.maxlength]="cvvLen()"
+                      [placeholder]="cvvLen() === 4 ? '1234' : '123'"
+                      data-testid="saved-cvv"
+                      [ngModel]="cvv()"
+                      (ngModelChange)="onCvvInput($event)"
+                    />
+                  </div>
+                  <p class="hint">{{ 'checkout.cvvHint' | translate }}</p>
+                </div>
+              }
+
+              <!-- Aviso al pagar con saldo -->
+              @if (payMode() === 'wallet') {
+                <p class="hint" data-testid="wallet-note">
+                  {{ (walletCoversAll() ? 'checkout.walletCoversAll' : 'checkout.walletPartial') | translate }}
+                </p>
+              }
+
+              <!-- Formulario de tarjeta NUEVA (flujo de agregar método) -->
+              @if (payMode() === 'new') {
+                <div class="card-form" data-testid="new-card-form">
+                  @if (!hasSavedMethods()) {
+                    <p class="hint" data-testid="no-methods-hint">{{ 'checkout.noMethodsHint' | translate }}</p>
+                  }
+                  <div class="field">
+                    <label for="cc-number">{{ 'checkout.cardNumber' | translate }}</label>
+                    <input id="cc-number" type="text" inputmode="numeric" autocomplete="cc-number"
+                      placeholder="1234 5678 9012 3456" maxlength="19"
+                      [ngModel]="cardNumber()" (ngModelChange)="cardNumber.set($event)" />
+                  </div>
+                  <div class="card-row">
+                    <div class="field">
+                      <label for="cc-exp">{{ 'checkout.cardExp' | translate }}</label>
+                      <input id="cc-exp" type="text" autocomplete="cc-exp" [attr.placeholder]="'checkout.cardExpPlaceholder' | translate" maxlength="5"
+                        [ngModel]="cardExp()" (ngModelChange)="cardExp.set($event)" />
+                    </div>
+                    <div class="field">
+                      <label for="cc-cvv">{{ 'checkout.cvv' | translate }}</label>
+                      <input id="cc-cvv" type="text" inputmode="numeric" autocomplete="cc-csc" placeholder="123" maxlength="4"
+                        [ngModel]="cardCvv()" (ngModelChange)="cardCvv.set($event)" />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="cc-name">{{ 'checkout.cardName' | translate }}</label>
+                    <input id="cc-name" type="text" autocomplete="cc-name" [attr.placeholder]="'checkout.cardNamePlaceholder' | translate"
+                      [ngModel]="cardName()" (ngModelChange)="cardName.set($event)" />
+                  </div>
+                  <p class="hint" data-testid="save-card-hint">{{ 'checkout.saveCardHint' | translate }}</p>
+                </div>
+              }
+            }
+
+            <!-- PASARELA: dónde se procesa el pago (no si el saldo cubre todo) -->
+            @if (needsGateway()) {
+              <h3 class="gateway-title">{{ 'checkout.processedBy' | translate }}</h3>
+              <div class="gateway-options" role="radiogroup" [attr.aria-label]="'checkout.gatewayGroup' | translate">
+                @for (gw of gateways(); track gw.gatewayId) {
+                  <button
+                    type="button"
+                    class="gateway-option"
+                    role="radio"
+                    [attr.aria-checked]="gw.gatewayId === selectedGateway()?.gatewayId"
+                    [class.selected]="gw.gatewayId === selectedGateway()?.gatewayId"
+                    (click)="selectGateway(gw.gatewayId)"
+                  >
+                    <span class="radio-dot" aria-hidden="true"></span>
+                    <span class="gateway-name">{{ gw.name }}</span>
+                    @if (gw.installmentOptions.length > 1) {
+                      <span class="gateway-badge">{{ 'checkout.installmentsBadge' | translate }}</span>
+                    }
+                    @if (gw.recommended) {
+                      <span class="gateway-badge default">{{ 'checkout.recommended' | translate }}</span>
+                    }
+                  </button>
+                }
+              </div>
+              @if (selectedGateway(); as gw) {
+                @if (gw.installmentOptions.length > 1) {
+                  <label class="installments">
+                    {{ 'checkout.installmentsLabel' | translate }}
+                    <select (change)="selectInstallments($any($event.target).value)">
+                      @for (opt of gw.installmentOptions; track opt.installments) {
+                        <option [value]="opt.installments" [selected]="opt.installments === installments()">
+                          @if (opt.installments === 1) {
+                            {{ 'checkout.onePayment' | translate: { amount: (opt.total | money) } }}
+                          } @else {
+                            {{ 'checkout.installmentOption' | translate: { n: opt.installments, amount: (perInstallment(opt.total, opt.installments) | money) } }}
+                          }
+                        </option>
+                      }
+                    </select>
+                  </label>
+                }
+              }
+            }
+          </section>
+        </div>
+
+        <!-- RESUMEN con desglose transparente -->
+        <aside class="checkout-summary">
+          <h2>{{ 'checkout.summary' | translate }}</h2>
+          @if (breakdown(); as b) {
+            <div class="breakdown" data-testid="breakdown">
+              <div class="row"><span>{{ 'checkout.ticketPrice' | translate }}</span><span>{{ b.boleto | money }}</span></div>
+              <div class="row"><span>{{ 'checkout.serviceFee' | translate }}</span><span data-testid="service-fee">{{ b.serviceFee | money }}</span></div>
+              <div class="row"><span>{{ 'checkout.iva' | translate }}</span><span>{{ b.iva | money }}</span></div>
+              <div class="row total"><span>{{ 'common.total' | translate }}</span><span data-testid="total">{{ b.total | money }}</span></div>
+            </div>
+            <p class="note">{{ 'checkout.serviceFeeNote' | translate }}</p>
+          }
+
+          @if (error()) {
+            <p class="error" data-testid="checkout-error">{{ error() }}</p>
+          }
+          @if (status() === 'pending' && paying()) {
+            <p class="awaiting" data-testid="awaiting">{{ 'checkout.awaiting' | translate }}</p>
+          }
+
+          <button type="button" class="btn primary btn-block" data-testid="pay-confirm" [disabled]="!canPay()" (click)="pay()">
+            @if (paying()) { {{ 'checkout.processing' | translate }} } @else { {{ 'checkout.payButton' | translate: { amount: (breakdown()?.total | money) } }} }
+          </button>
+          <p class="secure-note">
+            <span class="lock-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="10" width="16" height="10" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke-linecap="round" />
+              </svg>
+            </span>
+            {{ 'checkout.secureNote' | translate }}
+          </p>
+        </aside>
+      </div>
+    }
+  } @else {
+    <p data-testid="checkout-loading">{{ 'checkout.loading' | translate }}</p>
+  }
+</section>

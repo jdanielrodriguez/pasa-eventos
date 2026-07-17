@@ -1,0 +1,80 @@
+<section class="config-page promoter-history">
+  <div class="ph-head">
+    <app-back-link link="/configuracion" [queryParams]="{ tab: 'promotores' }" testId="ph-back" [label]="'promoterHistory.back' | translate" />
+    <h1>
+      {{ 'promoterHistory.title' | translate }}
+      @if (promoterName()) { <span class="muted">— {{ promoterName() }}</span> }
+    </h1>
+  </div>
+
+  @if (loading()) {
+    <app-loading variant="skeleton" data-testid="ph-loading" />
+  } @else {
+    <div class="filters-row">
+      <label class="field"><span>{{ 'common.search' | translate }}</span>
+        <app-search-field [value]="search()" (valueChange)="search.set($event)" (searched)="search.set($event)"
+          [placeholder]="'promoterHistory.searchPlaceholder' | translate" name="phq" testId="ph-search" />
+      </label>
+      <label class="field"><span>{{ 'promoterHistory.statusLabel' | translate }}</span>
+        <select [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)" name="phstatus" data-testid="ph-filter">
+          <option value="">{{ 'common.all' | translate }}</option>
+          @for (s of availableStatuses(); track s) { <option [value]="s">{{ statusLabel(s) }}</option> }
+        </select>
+      </label>
+      <button type="button" class="btn small" (click)="toggleSort()" data-testid="ph-sort" [title]="'promoterHistory.sortTitle' | translate">
+        <app-icon name="history" /> {{ (sortDesc() ? 'promoterHistory.newestFirst' : 'promoterHistory.oldestFirst') | translate }}
+      </button>
+    </div>
+
+    @if (filtered().length > 0) {
+      <div class="ph-table-wrap">
+        <table class="ph-table" data-testid="ph-table">
+          <thead>
+            <tr>
+              <th>{{ 'promoterHistory.colDate' | translate }}</th>
+              <th>{{ 'promoterHistory.colChange' | translate }}</th>
+              <th>{{ 'promoterHistory.colAdmin' | translate }}</th>
+              <th>{{ 'promoterHistory.colReason' | translate }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (e of filtered(); track e.id) {
+              <tr data-testid="ph-row" [attr.data-kind]="e.kind">
+                <td class="muted small">{{ e.createdAt | localizedDate: 'd MMM y, HH:mm' }}</td>
+                @if (e.kind === 'settlement') {
+                  <td class="ph-change">
+                    <span class="badge badge-approved" data-testid="ph-settlement">{{ 'promoterHistory.settlement' | translate }}</span>
+                    @if (e.eventName) { <span class="ph-event">{{ e.eventName }}</span> }
+                  </td>
+                  <td class="muted small">{{ 'promoterHistory.system' | translate }}</td>
+                  <td><strong>Q{{ e.amount }}</strong> {{ 'promoterHistory.transferred' | translate }}</td>
+                } @else {
+                  <td class="ph-change">
+                    <span class="badge badge-{{ e.statusFrom }}">{{ statusLabel(e.statusFrom) }}</span>
+                    <span class="ph-arrow">→</span>
+                    <span class="badge badge-{{ e.statusTo }}">{{ statusLabel(e.statusTo) }}</span>
+                  </td>
+                  <td class="muted small">{{ e.adminId ? e.adminId : ('promoterHistory.system' | translate) }}</td>
+                  <td>{{ e.reason || '—' }}</td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else if (events().length > 0) {
+      <app-empty-state
+        variant="generic"
+        data-testid="ph-no-match"
+        [title]="'promoterHistory.noMatch' | translate"
+        [subtitle]="'promoterHistory.noMatchHint' | translate"
+      />
+    } @else {
+      <app-empty-state
+        variant="billing"
+        data-testid="ph-empty"
+        [title]="'config.promoters.noTransitions' | translate"
+      />
+    }
+  }
+</section>
